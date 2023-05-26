@@ -29,7 +29,7 @@ func (d FsPersistence) Close() {}
 func (d FsPersistence) Keys() ([]string, error) {
 	files, err := os.ReadDir(d.folder)
 	if err != nil {
-		return []string{}, errors.Wrap(err, "kvstore.Keys")
+		return []string{}, errors.Wrap(err, "FsPersistence.Keys")
 	}
 	keys := make([]string, 0)
 	for _, f := range files {

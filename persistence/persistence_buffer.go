@@ -59,11 +59,13 @@ func (d PersistenceBuffer) Close() {
 	d.cancel()
 }
 
+// Write adds a write command to the command buffer
 func (d PersistenceBuffer) Write(key string, data *kvstore.ValueItem) error {
 	d.cb <- commandBuffer{cmdType: writeCommand, key: key, mv: data}
 	return nil
 }
 
+// Read adds a read command to the command buffer and waits for a response
 func (d PersistenceBuffer) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
 	cmd := readMetadataCommand
 	if readValue {
@@ -74,7 +76,7 @@ func (d PersistenceBuffer) Read(key string, readValue bool) (*kvstore.ValueItem,
 	d.cb <- commandBuffer{cmdType: cmd, key: key, response: response}
 	r := <-response
 	if r.err != nil {
-		return nil, errors.Wrap(r.err, "DiskPersisatence Read")
+		return nil, errors.Wrap(r.err, "PersistenceBuffer.Read")
 	}
 	return r.mv, nil
 }
@@ -108,11 +110,11 @@ func (d PersistenceBuffer) commandBuffer(ctx context.Context) {
 				command.response <- responseType{mv: mv, err: valueErr}
 			}
 			if err != nil {
-				log.Error().Msgf("commandBuffer command: %d error: %s", command.cmdType, err.Error())
+				log.Error().Msgf("PersistenceBuffer.commandBuffer command: %d error: %s", command.cmdType, err.Error())
 			}
 
 		case <-ctx.Done():
-			log.Info().Msg("DiskPersistence writeBuffer cancelled")
+			log.Info().Msg("PersistenceBuffer.commandBuffer cancelled")
 		}
 	}
 }
