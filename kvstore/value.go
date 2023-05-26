@@ -43,13 +43,12 @@ func NewValueItem(dataBytes []byte, ts time.Time) *ValueItem {
 }
 
 // SetData sets the data
-func (mv *ValueItem) SetData(dataBytes []byte, ts time.Time) error {
+func (mv *ValueItem) SetData(dataBytes []byte) error {
 	if _, err := strconv.ParseInt(string(dataBytes), 10, 64); err == nil && mv.Counter == nil {
 		mv.Counter = &CounterConstraints{Min: math.MinInt64, Max: math.MaxInt64}
 	}
 
 	mv.Data = dataBytes
-	mv.Ts = ts
 	mv.dataLoaded = true
 	return nil
 }

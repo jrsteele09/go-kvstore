@@ -262,9 +262,10 @@ func (kv *Store) setData(key string, data []byte) error {
 		mv = NewValueItem(data, kv.nowFunc())
 	}
 
-	if err := mv.SetData(data, kv.nowFunc()); err != nil {
+	if err := mv.SetData(data); err != nil {
 		return errors.Wrap(err, "Store.get mv.SetData")
 	}
+	mv.Ts = kv.nowFunc()
 	kv.data[key] = mv
 	return kv.persist(key)
 }

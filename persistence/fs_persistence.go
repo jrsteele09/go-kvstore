@@ -1,10 +1,11 @@
-package kvstore
+package persistence
 
 import (
 	"encoding/json"
 	"os"
 	"path"
 
+	"github.com/jrsteele09/go-kvstore/kvstore"
 	"github.com/pkg/errors"
 )
 
@@ -41,7 +42,7 @@ func (d FsPersistence) Keys() ([]string, error) {
 }
 
 // Write writes data to the file system
-func (d FsPersistence) Write(key string, data *ValueItem) error {
+func (d FsPersistence) Write(key string, data *kvstore.ValueItem) error {
 	folder := path.Join(d.folder, key)
 	if err := os.MkdirAll(folder, fileMode); err != nil {
 		return errors.Wrap(err, "FsPersistence.Write MkdirAll")
@@ -76,13 +77,13 @@ func (d FsPersistence) Delete(key string) error {
 }
 
 // Read reads data from a file system
-func (d FsPersistence) Read(key string, readValue bool) (*ValueItem, error) {
+func (d FsPersistence) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
 	folder := path.Join(d.folder, key)
 	metaDataBytes, err := os.ReadFile(path.Join(folder, metaDataFilename))
 	if err != nil {
 		return nil, errors.Wrap(err, "FsPersistence.Read os.ReadFile metadata")
 	}
-	var mv ValueItem
+	var mv kvstore.ValueItem
 	if unmarshalErr := json.Unmarshal(metaDataBytes, &mv); unmarshalErr != nil {
 		return nil, errors.Wrap(err, "FsPersistence.Read json.Unmarshal")
 	}
@@ -95,8 +96,6 @@ func (d FsPersistence) Read(key string, readValue bool) (*ValueItem, error) {
 		return nil, errors.Wrap(err, "FsPersistence.Read os.ReadFile")
 
 	}
-	mv.Data = valueBytes
-	mv.dataLoaded = true
-
+	mv.SetData(valueBytes)
 	return &mv, nil
 }

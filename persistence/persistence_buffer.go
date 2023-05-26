@@ -1,8 +1,9 @@
-package kvstore
+package persistence
 
 import (
 	"context"
 
+	"github.com/jrsteele09/go-kvstore/kvstore"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
@@ -23,14 +24,14 @@ const (
 )
 
 type responseType struct {
-	mv  *ValueItem
+	mv  *kvstore.ValueItem
 	err error
 }
 
 type commandBuffer struct {
 	cmdType  commandTyoe
 	key      string
-	mv       *ValueItem
+	mv       *kvstore.ValueItem
 	response chan responseType
 }
 
@@ -38,11 +39,11 @@ type commandBuffer struct {
 type PersistenceBuffer struct {
 	cb          chan commandBuffer
 	cancel      context.CancelFunc
-	persistence PersistenceController
+	persistence kvstore.PersistenceController
 }
 
 // NewPersistenceBuffer creates a new instance of a PersistenceBuffer.
-func NewPersistenceBuffer(persistence PersistenceController, bufferSize uint) PersistenceBuffer {
+func NewPersistenceBuffer(persistence kvstore.PersistenceController, bufferSize uint) PersistenceBuffer {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	dp := PersistenceBuffer{
 		cb:          make(chan commandBuffer, bufferSize),
@@ -58,12 +59,12 @@ func (d PersistenceBuffer) Close() {
 	d.cancel()
 }
 
-func (d PersistenceBuffer) Write(key string, data *ValueItem) error {
+func (d PersistenceBuffer) Write(key string, data *kvstore.ValueItem) error {
 	d.cb <- commandBuffer{cmdType: writeCommand, key: key, mv: data}
 	return nil
 }
 
-func (d PersistenceBuffer) Read(key string, readValue bool) (*ValueItem, error) {
+func (d PersistenceBuffer) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
 	cmd := readMetadataCommand
 	if readValue {
 		cmd = readValueCommand
