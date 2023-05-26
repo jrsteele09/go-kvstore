@@ -9,27 +9,27 @@ import (
 	"github.com/pkg/errors"
 )
 
-// FsPersistence writes key/values to a file system.
+// Filesystem writes key/values to a file system.
 // The keys sre folders and values are written to a file
-type FsPersistence struct {
+type Filesystem struct {
 	folder string
 }
 
 // NewFsPersistence creates a new FsPersistence
-func NewFsPersistence(folder string) *FsPersistence {
-	return &FsPersistence{
+func NewFsPersistence(folder string) *Filesystem {
+	return &Filesystem{
 		folder: folder,
 	}
 }
 
 // Close closes the Persistence controller
-func (d FsPersistence) Close() {}
+func (fs Filesystem) Close() {}
 
 // Keys returns a list of keys from the File System
-func (d FsPersistence) Keys() ([]string, error) {
-	files, err := os.ReadDir(d.folder)
+func (fs Filesystem) Keys() ([]string, error) {
+	files, err := os.ReadDir(fs.folder)
 	if err != nil {
-		return []string{}, errors.Wrap(err, "FsPersistence.Keys")
+		return []string{}, errors.Wrap(err, "Filesystem.Keys")
 	}
 	keys := make([]string, 0)
 	for _, f := range files {
@@ -42,18 +42,18 @@ func (d FsPersistence) Keys() ([]string, error) {
 }
 
 // Write writes data to the file system
-func (d FsPersistence) Write(key string, data *kvstore.ValueItem) error {
-	folder := path.Join(d.folder, key)
+func (fs Filesystem) Write(key string, data *kvstore.ValueItem) error {
+	folder := path.Join(fs.folder, key)
 	if err := os.MkdirAll(folder, fileMode); err != nil {
-		return errors.Wrap(err, "FsPersistence.Write MkdirAll")
+		return errors.Wrap(err, "Filesystem.Write MkdirAll")
 	}
 	metaDataBytes, err := json.Marshal(data)
 	if err != nil {
-		return errors.Wrap(err, "FsPersistence.Write json.Marshal metaDataBytes")
+		return errors.Wrap(err, "Filesystem.Write json.Marshal metaDataBytes")
 	}
 	err = os.WriteFile(path.Join(folder, metaDataFilename), metaDataBytes, fileMode)
 	if err != nil {
-		return errors.Wrap(err, "FsPersistence.Write os.WriteFile metaData")
+		return errors.Wrap(err, "Filesystem.Write os.WriteFile metaData")
 	}
 
 	if data.Data == nil {
@@ -61,31 +61,31 @@ func (d FsPersistence) Write(key string, data *kvstore.ValueItem) error {
 	}
 	err = os.WriteFile(path.Join(folder, dataFilename), data.Data, fileMode)
 	if err != nil {
-		return errors.Wrap(err, "FsPersistence.Write os.WriteFile data")
+		return errors.Wrap(err, "Filesystem.Write os.WriteFile data")
 	}
 
 	return nil
 }
 
 // Delete deletes a key from the file system
-func (d FsPersistence) Delete(key string) error {
-	folder := path.Join(d.folder, key)
+func (fs Filesystem) Delete(key string) error {
+	folder := path.Join(fs.folder, key)
 	if err := os.RemoveAll(folder); err != nil {
-		return errors.Wrap(err, "FsPersistence.Delete os.RemoveAll")
+		return errors.Wrap(err, "Filesystem.Delete os.RemoveAll")
 	}
 	return nil
 }
 
 // Read reads data from a file system
-func (d FsPersistence) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
-	folder := path.Join(d.folder, key)
+func (fs Filesystem) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
+	folder := path.Join(fs.folder, key)
 	metaDataBytes, err := os.ReadFile(path.Join(folder, metaDataFilename))
 	if err != nil {
-		return nil, errors.Wrap(err, "FsPersistence.Read os.ReadFile metadata")
+		return nil, errors.Wrap(err, "Filesystem.Read os.ReadFile metadata")
 	}
 	var mv kvstore.ValueItem
 	if unmarshalErr := json.Unmarshal(metaDataBytes, &mv); unmarshalErr != nil {
-		return nil, errors.Wrap(err, "FsPersistence.Read json.Unmarshal")
+		return nil, errors.Wrap(err, "Filesystem.Read json.Unmarshal")
 	}
 	if !readValue {
 		return &mv, nil
@@ -93,9 +93,12 @@ func (d FsPersistence) Read(key string, readValue bool) (*kvstore.ValueItem, err
 
 	valueBytes, err := os.ReadFile(path.Join(folder, dataFilename))
 	if err != nil {
-		return nil, errors.Wrap(err, "FsPersistence.Read os.ReadFile")
+		return nil, errors.Wrap(err, "Filesystem.Read os.ReadFile")
 
 	}
-	mv.SetData(valueBytes)
+	err = mv.SetData(valueBytes)
+	if err != nil {
+		return nil, errors.Wrap(err, "Filesystem.Read mv.SetData")
+	}
 	return &mv, nil
 }
