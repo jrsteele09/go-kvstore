@@ -6,25 +6,26 @@ import (
 	"time"
 )
 
-// CounterConstraints contains the current integer value of a counter, it can be controlled with min and max values
+// CounterConstraints holds the current integer value of a counter, bounded by Min and Max.
 type CounterConstraints struct {
 	Min int64 `json:"min"`
 	Max int64 `json:"max"`
 }
 
-// ValueItem stores the data associated with a key.
-// The data can be in and unloaded state which means that it does not exist in memory but has been persisted.
-// Unloaded data will get reloaded when accessed.
+// ValueItem represents the value associated with a key.
+// The data can be in a loaded or unloaded state, which indicates whether it's in memory.
+// Unloaded data will be reloaded when accessed.
 type ValueItem struct {
 	Data       []byte              `json:"-"`
-	Counter    *CounterConstraints `json:"counterContraints,omitempty"`
+	Counter    *CounterConstraints `json:"counterConstraints,omitempty"`
 	Ts         time.Time           `json:"timestamp"`
 	TTL        TTLType             `json:"ttl"`
 	dataLoaded bool                `json:"-"`
 }
 
-// NewValueItem creates a new ValueItem with a timestamp
+// NewValueItem initializes a new ValueItem with a given timestamp.
 func NewValueItem(dataBytes []byte, ts time.Time) *ValueItem {
+	// Check if dataBytes is an integer and initialize counter constraints accordingly
 	if _, err := strconv.ParseInt(string(dataBytes), 10, 64); err == nil {
 		return &ValueItem{
 			Data:       dataBytes,
@@ -34,6 +35,7 @@ func NewValueItem(dataBytes []byte, ts time.Time) *ValueItem {
 			dataLoaded: true,
 		}
 	}
+
 	return &ValueItem{
 		Data:       dataBytes,
 		Ts:         ts,
@@ -42,27 +44,29 @@ func NewValueItem(dataBytes []byte, ts time.Time) *ValueItem {
 	}
 }
 
-// SetData sets the data
-func (mv *ValueItem) SetData(dataBytes []byte) error {
-	if _, err := strconv.ParseInt(string(dataBytes), 10, 64); err == nil && mv.Counter == nil {
-		mv.Counter = &CounterConstraints{Min: math.MinInt64, Max: math.MaxInt64}
+// SetData updates the Data field of a ValueItem.
+func (item *ValueItem) SetData(dataBytes []byte) error {
+	// If dataBytes can be parsed as an integer and Counter is nil, initialize Counter.
+	if _, err := strconv.ParseInt(string(dataBytes), 10, 64); err == nil && item.Counter == nil {
+		item.Counter = &CounterConstraints{Min: math.MinInt64, Max: math.MaxInt64}
 	}
-
-	mv.Data = dataBytes
-	mv.dataLoaded = true
+	item.Data = dataBytes
+	item.dataLoaded = true
 	return nil
 }
 
-func (mv *ValueItem) expired(now time.Time) bool {
-	if mv.TTL <= 0 {
+// expired checks if a ValueItem is expired based on its TTL.
+func (item *ValueItem) expired(now time.Time) bool {
+	if item.TTL <= 0 {
 		return false
 	}
-	return mv.Ts.Add(time.Duration(time.Duration(mv.TTL) * time.Second)).Before(now)
+	return item.Ts.Add(time.Duration(item.TTL) * time.Second).Before(now)
 }
 
-func (mv *ValueItem) unload(now time.Time, unloadAfter time.Duration) bool {
+// unload checks if a ValueItem should be unloaded based on a duration.
+func (item *ValueItem) unload(now time.Time, unloadAfter time.Duration) bool {
 	if unloadAfter == 0 {
 		return false
 	}
-	return now.Sub(mv.Ts) > unloadAfter
+	return now.Sub(item.Ts) > unloadAfter
 }

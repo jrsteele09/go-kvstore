@@ -2,10 +2,20 @@ package kvstore
 
 import "time"
 
-// StoreOption defines a function to use to configure a KV Store
+// StoreOption is a type for functions that configure a Store.
+// These functions are intended to be used with the NewStore function
+// to create a customized Store instance.
 type StoreOption func(s *Store)
 
-// WithUnloadFrequencyOption configures how often the cache checks for eviction and how long the objects stay in memory before being unloaded.
+// WithUnloadFrequencyOption returns a StoreOption that configures the eviction frequency
+// and the unload-after time of objects in the cache.
+//
+// - 'ef' sets how often the store should check and evict expired items.
+// - 'uf' sets the duration an object will stay in memory before being unloaded.
+//
+// Example:
+//
+//	NewStore(WithUnloadFrequencyOption(time.Minute, time.Hour))
 func WithUnloadFrequencyOption(ef time.Duration, uf time.Duration) StoreOption {
 	return func(s *Store) {
 		s.evictionFreq = ef
@@ -13,14 +23,25 @@ func WithUnloadFrequencyOption(ef time.Duration, uf time.Duration) StoreOption {
 	}
 }
 
-// WithPersistenceOption allows the setting up of a number of persitence controllers
-func WithPersistenceOption(persistence ...PersistenceController) StoreOption {
+// WithPersistenceOption returns a StoreOption that sets up the persistence controllers
+// for the Store. Multiple PersistenceControllers can be passed in.
+//
+// Example:
+//
+//	NewStore(WithPersistenceOption(persister1, persister2))
+func WithPersistenceOption(persistence ...DataPersister) StoreOption {
 	return func(s *Store) {
 		s.persistence = persistence
 	}
 }
 
-// WithNowFuncOption allows configuration of the function that returns the current time. Useful for testing
+// WithNowFuncOption returns a StoreOption that allows you to configure the function
+// used to fetch the current time. This is especially useful for testing scenarios where
+// you want to control the time flow.
+//
+// Example:
+//
+//	NewStore(WithNowFuncOption(func() time.Time { return someFixedTime }))
 func WithNowFuncOption(nowFunc func() time.Time) StoreOption {
 	return func(s *Store) {
 		s.nowFunc = nowFunc

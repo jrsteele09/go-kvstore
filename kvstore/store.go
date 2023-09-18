@@ -12,67 +12,68 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// TTLType is the number of seconds for the key / data to be alive
+// TTLType defines the time-to-live (TTL) in seconds for a key/data pair.
 type TTLType int64
 
+// Constants for special TTL values.
 const (
 	// TTLKeyNotExist used to signal that the key does not exist when querying a TTL of a key
-	TTLKeyNotExist TTLType = -2
-	// TTLNoExpirySet used to signal that the key does not have an expiry when querying the TTL of a key
-	TTLNoExpirySet TTLType = -1
+	TTLKeyNotExist TTLType = -2 // Indicates that a queried key does not exist.
+	TTLNoExpirySet TTLType = -1 // Indicates that a key does not have an expiry time.
 )
 
+// Error definitions for common error cases.
 var (
-	// ErrNotFoundErr is returned when a key is not found when Reading or deleting
-	ErrNotFoundErr error = errors.New("key not found")
+	// ErrNotFound returned when a key is not found during read or delete operations.
+	ErrNotFound error = errors.New("key not found")
 
-	// ErrKeyInvalid is returned when the key contains invalid characters
+	// ErrKeyInvalid returned when a key contains invalid characters.
 	ErrKeyInvalid error = errors.New("key contains invalid characters")
 )
 
-// Store is the structure that handles concurrent access to the map
+// Store represents the key-value storage system.
+// It is thread-safe and allows for optional data persistence.
 type Store struct {
 	lock            sync.RWMutex
 	nowFunc         func() time.Time
 	data            map[string]*ValueItem
-	persistence     []PersistenceController
+	persistence     []DataPersister
 	evictionFreq    time.Duration
 	unloadAfterTime time.Duration
 	ctx             context.Context
 	cancelFunc      context.CancelFunc
 }
 
-// NewStore initializes and sets up a new Store with customizable settings.
-// These settings encompass the rate at which the store scans for values to be evicted, as well as the frequency at which values are purged from memory.
-// For persistent entities, the store uses the first item in the list for initialization upon startup, thus enabling the reload of persisted key-value pairs after a restart.
-func NewStore(options ...StoreOption) (*Store, error) {
-	ds := &Store{
+// New initializes a new Store with optional configurations.
+// It takes a variadic number of StoreOption functions to customize its behavior.
+func New(options ...StoreOption) (*Store, error) {
+	store := &Store{
 		data:            make(map[string]*ValueItem),
-		persistence:     make([]PersistenceController, 0),
+		persistence:     make([]DataPersister, 0),
 		evictionFreq:    0,
 		unloadAfterTime: 0,
 		nowFunc:         time.Now,
 	}
 
 	for _, opt := range options {
-		opt(ds)
+		opt(store)
 	}
 
-	ds.ctx, ds.cancelFunc = context.WithCancel(context.Background())
+	store.ctx, store.cancelFunc = context.WithCancel(context.Background())
 
-	if err := ds.initialisePersistenceControllers(); err != nil {
-		return ds, err
+	if err := store.initPersistence(); err != nil {
+		return nil, err
 	}
-	go ds.cacheController()
-	return ds, nil
+	go store.evictionController()
+	return store, nil
 }
 
-// Close cancels the internal context, stopping the cache controller
+// Close stops the internal cache management routines.
 func (kv *Store) Close() {
 	kv.cancelFunc()
 }
 
-// Set sets a keys with a value
+// Set stores a key-value pair into the Store.
 func (kv *Store) Set(key string, value []byte) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
@@ -82,7 +83,7 @@ func (kv *Store) Set(key string, value []byte) error {
 	return kv.setData(key, value)
 }
 
-// Get gets the value associated with a key
+// Get retrieves the value associated with a key from the Store.
 func (kv *Store) Get(key string) ([]byte, error) {
 	if !KeyValid(key) {
 		return nil, ErrKeyInvalid
@@ -93,7 +94,7 @@ func (kv *Store) Get(key string) ([]byte, error) {
 	kv.lock.RUnlock()
 
 	if !ok || mv.expired(kv.nowFunc()) {
-		return nil, ErrNotFoundErr
+		return nil, ErrNotFound
 	}
 
 	if mv.dataLoaded {
@@ -103,14 +104,14 @@ func (kv *Store) Get(key string) ([]byte, error) {
 	return kv.readFromFirstStore(key)
 }
 
-// Delete deletes the data associated with a specific key
+// Delete removes a key and its value from the Store.
 func (kv *Store) Delete(key string) error {
 	kv.lock.Lock()
 	defer kv.lock.Unlock()
 	return kv.delete(key)
 }
 
-// InMemory returns true if the data is loaded in memory
+// InMemory checks if the value for a given key is loaded into memory.
 func (kv *Store) InMemory(key string) bool {
 	kv.lock.RLock()
 	defer kv.lock.RUnlock()
@@ -120,21 +121,22 @@ func (kv *Store) InMemory(key string) bool {
 	return kv.data[key].dataLoaded
 }
 
-// Keys returns all the keys in the map
+// Keys returns a slice of all keys currently in the Store.
 func (kv *Store) Keys() ([]string, error) {
 	kv.lock.RLock()
 	defer kv.lock.RUnlock()
-	keys := make([]string, len(kv.data))
-	idx := 0
+	keys := make([]string, 0)
 	for k := range kv.data {
-		keys[idx] = k
-		idx++
+		keys = append(keys, k)
 	}
 	return keys, nil
 }
 
 // QueryKeys returns the keys that have been created between a time period
 func (kv *Store) QueryKeys(from, to time.Time) ([]string, error) {
+	kv.lock.RLock()
+	defer kv.lock.RUnlock()
+
 	keys := make([]string, 0)
 	for k, v := range kv.data {
 		if v.expired(kv.nowFunc()) {
@@ -147,7 +149,7 @@ func (kv *Store) QueryKeys(from, to time.Time) ([]string, error) {
 	return keys, nil
 }
 
-// SetTTL sets the number of seconds until the key is evicted from the cache.
+// SetTTL sets the time-to-live (TTL) for a specific key.
 func (kv *Store) SetTTL(key string, ttl int64) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
@@ -158,7 +160,7 @@ func (kv *Store) SetTTL(key string, ttl int64) error {
 	return kv.setTTL(key, TTLType(ttl))
 }
 
-// TTL Returns the number of seconds remaining
+// TTL retrieves the remaining TTL for a given key.
 func (kv *Store) TTL(key string) TTLType {
 	if !KeyValid(key) {
 		return TTLKeyNotExist
@@ -179,7 +181,7 @@ func (kv *Store) TTL(key string) TTLType {
 	return TTLType(ttl)
 }
 
-// Touch updates the timestamp
+// Touch updates the last-accessed time for a given key.
 func (kv *Store) Touch(key string) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
@@ -189,16 +191,16 @@ func (kv *Store) Touch(key string) error {
 	defer kv.lock.Unlock()
 	mv, ok := kv.data[key]
 	if !ok || mv.expired(kv.nowFunc()) {
-		return ErrNotFoundErr
+		return ErrNotFound
 	}
 	mv.Ts = kv.nowFunc()
-	if err := kv.persist(key); err != nil {
+	if err := kv.persistData(key); err != nil {
 		return errors.Wrap(err, "Store.Touch kv.persist")
 	}
 	return nil
 }
 
-// Counter initialises a key to a specific counter value
+// Counter initializes or updates a counter value for a given key.
 func (kv *Store) Counter(key string, delta int64) (int64, error) {
 	if !KeyValid(key) {
 		return 0, ErrKeyInvalid
@@ -230,12 +232,12 @@ func (kv *Store) Counter(key string, delta int64) (int64, error) {
 		return 0, errors.New("Store.Counter minimum value reached")
 	}
 	if err := kv.setData(key, []byte(fmt.Sprintf("%d", i))); err != nil {
-		return 0, errors.New("Store.Counter minimum value reached")
+		return 0, errors.Wrap(err, "Store.Counter setData")
 	}
 	return i, nil
 }
 
-// SetCounterLimits sets the max / min values that a counter can reach
+// SetCounterLimits sets the min/max limits for a counter associated with a key.
 func (kv *Store) SetCounterLimits(key string, min, max int64) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
@@ -253,7 +255,7 @@ func (kv *Store) SetCounterLimits(key string, min, max int64) error {
 	}
 	kv.data[key].Counter.Max = max
 	kv.data[key].Counter.Min = min
-	return kv.persist(key)
+	return kv.persistData(key)
 }
 
 func (kv *Store) setData(key string, data []byte) error {
@@ -267,12 +269,12 @@ func (kv *Store) setData(key string, data []byte) error {
 	}
 	mv.Ts = kv.nowFunc()
 	kv.data[key] = mv
-	return kv.persist(key)
+	return kv.persistData(key)
 }
 
 func (kv *Store) delete(key string) error {
 	if _, ok := kv.data[key]; !ok {
-		return ErrNotFoundErr
+		return ErrNotFound
 	}
 	delete(kv.data, key)
 
@@ -302,16 +304,16 @@ func (kv *Store) readFromFirstStore(key string) ([]byte, error) {
 
 func (kv *Store) setTTL(key string, ttl TTLType) error {
 	if _, ok := kv.data[key]; !ok {
-		return ErrNotFoundErr
+		return ErrNotFound
 	}
 	kv.data[key].TTL = ttl
-	if err := kv.persist(key); err != nil {
+	if err := kv.persistData(key); err != nil {
 		return errors.Wrap(err, "store.setTTL kv.persist")
 	}
 	return nil
 }
 
-func (kv *Store) initialisePersistenceControllers() error {
+func (kv *Store) initPersistence() error {
 	if len(kv.persistence) == 0 {
 		return nil
 	}
@@ -337,7 +339,7 @@ func (kv *Store) initialisePersistenceControllers() error {
 	return nil
 }
 
-func (kv *Store) persist(key string) error {
+func (kv *Store) persistData(key string) error {
 	if len(kv.persistence) == 0 {
 		return nil
 	}
@@ -347,17 +349,15 @@ func (kv *Store) persist(key string) error {
 	}
 
 	mv := kv.data[key]
-	var returnError error
 	for _, d := range kv.persistence {
 		if err := d.Write(key, mv); err != nil {
-			log.Error().Msgf("Store.persist d.Write error: %v", err)
-			returnError = errors.Wrap(err, "d.Write")
+			return errors.Wrap(err, "Store.persist Write error")
 		}
 	}
-	return returnError
+	return nil
 }
 
-func (kv *Store) cacheController() {
+func (kv *Store) evictionController() {
 	if kv.evictionFreq <= 0 {
 		return
 	}
@@ -367,17 +367,15 @@ func (kv *Store) cacheController() {
 	for {
 		select {
 		case <-timer.C:
-			log.Info().Msg("[kvstore cacheController] timer expired")
-			kv.eviction()
+			kv.runEvictionCheck()
 			timer.Reset(kv.evictionFreq)
 		case <-kv.ctx.Done():
-			log.Info().Msg("[kvstore cacheController] cancelled")
 			return
 		}
 	}
 }
 
-func (kv *Store) eviction() {
+func (kv *Store) runEvictionCheck() {
 	kv.lock.RLock()
 	timeNow := kv.nowFunc()
 	deletionKeys := make([]string, 0)

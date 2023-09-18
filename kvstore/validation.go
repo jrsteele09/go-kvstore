@@ -1,24 +1,32 @@
 package kvstore
 
-import "unicode"
+import (
+	"unicode"
+)
 
-// KeyValid returns true if the key contains valid characters - unicode letters, digits and or valid characters: ':', '@', '#', '+', '-', '_'
+// Prepopulated map for valid special runes.
+var validRunesMap = map[rune]bool{
+	':': true,
+	'@': true,
+	'#': true,
+	'+': true,
+	'-': true,
+	'_': true,
+}
+
+// KeyValid returns true if the key contains valid characters.
+// The valid characters include Unicode letters, digits, and specific special characters: ':', '@', '#', '+', '-', '_'.
 func KeyValid(key string) bool {
-	validRunes := []rune{':', '@', '#', '+', '-', '_'}
-
 	for _, r := range key {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !containsRune(validRunes, r) {
+		if !isValidRune(r) {
 			return false
 		}
 	}
 	return true
 }
 
-func containsRune(runes []rune, r rune) bool {
-	for _, r2 := range runes {
-		if r2 == r {
-			return true
-		}
-	}
-	return false
+// isValidRune returns true if the rune is a valid character for a key.
+// Valid characters include Unicode letters, digits, or special characters listed in the validRunesMap.
+func isValidRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || validRunesMap[r]
 }
