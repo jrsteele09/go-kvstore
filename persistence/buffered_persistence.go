@@ -2,16 +2,10 @@ package persistence
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jrsteele09/go-kvstore/kvstore"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
-)
-
-const (
-	metaDataFilename = "metadata.json"
-	dataFilename     = "data.bin"
-	fileMode         = 0700
 )
 
 type commandType int
@@ -42,8 +36,8 @@ type Buffer struct {
 	persistence kvstore.DataPersister
 }
 
-// NewPersistenceBuffer creates a new Buffer.
-func NewPersistenceBuffer(persistence kvstore.DataPersister, bufferSize uint) Buffer {
+// NewBuffer creates a new Buffer.
+func NewBuffer(persistence kvstore.DataPersister, bufferSize uint) Buffer {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	buffer := Buffer{
 		cb:          make(chan commandBuffer, bufferSize),
@@ -76,7 +70,7 @@ func (b Buffer) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
 	b.cb <- commandBuffer{cmdType: cmd, key: key, response: response}
 	r := <-response
 	if r.err != nil {
-		return nil, errors.Wrap(r.err, "Buffer.Read")
+		return nil, fmt.Errorf("Buffer.Read: %w", r.err)
 	}
 	return r.mv, nil
 }

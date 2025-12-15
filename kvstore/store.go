@@ -2,13 +2,13 @@ package kvstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
 
@@ -195,7 +195,7 @@ func (kv *Store) Touch(key string) error {
 	}
 	mv.Ts = kv.nowFunc()
 	if err := kv.persistData(key); err != nil {
-		return errors.Wrap(err, "Store.Touch kv.persist")
+		return fmt.Errorf("Store.Touch kv.persist: %w", err)
 	}
 	return nil
 }
@@ -214,16 +214,16 @@ func (kv *Store) Counter(key string, delta int64) (int64, error) {
 	if mv, ok = kv.data[key]; !ok {
 		intStr := fmt.Sprintf("%d", delta)
 		if err := kv.setData(key, []byte(intStr)); err != nil {
-			return 0, errors.Wrap(err, "Store.Counter kv.setData")
+			return 0, fmt.Errorf("Store.Counter kv.setData: %w", err)
 		}
 		return delta, nil
 	}
 	i, err := strconv.ParseInt(string(mv.Data), 10, 64)
 	if err != nil {
-		return 0, errors.Wrap(err, "Store.Counter strconv.ParseInt")
+		return 0, fmt.Errorf("Store.Counter strconv.ParseInt: %w", err)
 	}
 	if mv.Counter == nil {
-		return 0, errors.Wrap(err, "Store.Counter counter boundaries not set")
+		return 0, fmt.Errorf("Store.Counter counter boundaries not set: %w", err)
 	}
 	i += delta
 	if i > mv.Counter.Max {
@@ -232,7 +232,7 @@ func (kv *Store) Counter(key string, delta int64) (int64, error) {
 		return 0, errors.New("Store.Counter minimum value reached")
 	}
 	if err := kv.setData(key, []byte(fmt.Sprintf("%d", i))); err != nil {
-		return 0, errors.Wrap(err, "Store.Counter setData")
+		return 0, fmt.Errorf("Store.Counter setData: %w", err)
 	}
 	return i, nil
 }
@@ -265,7 +265,7 @@ func (kv *Store) setData(key string, data []byte) error {
 	}
 
 	if err := mv.SetData(data); err != nil {
-		return errors.Wrap(err, "Store.get mv.SetData")
+		return fmt.Errorf("Store.setData mv.SetData: %w", err)
 	}
 	mv.Ts = kv.nowFunc()
 	kv.data[key] = mv
@@ -281,7 +281,7 @@ func (kv *Store) delete(key string) error {
 	var returnError error
 	for _, p := range kv.persistence {
 		if err := p.Delete(key); err != nil {
-			returnError = errors.Wrap(err, "p.Delete")
+			returnError = fmt.Errorf("p.Delete: %w", err)
 		}
 	}
 	return returnError
@@ -308,7 +308,7 @@ func (kv *Store) setTTL(key string, ttl TTLType) error {
 	}
 	kv.data[key].TTL = ttl
 	if err := kv.persistData(key); err != nil {
-		return errors.Wrap(err, "store.setTTL kv.persist")
+		return fmt.Errorf("store.setTTL kv.persist: %w", err)
 	}
 	return nil
 }
@@ -351,7 +351,7 @@ func (kv *Store) persistData(key string) error {
 	mv := kv.data[key]
 	for _, d := range kv.persistence {
 		if err := d.Write(key, mv); err != nil {
-			return errors.Wrap(err, "Store.persist Write error")
+			return fmt.Errorf("Store.persist Write error: %w", err)
 		}
 	}
 	return nil

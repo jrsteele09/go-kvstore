@@ -2,34 +2,52 @@ package persistence
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 
 	"github.com/jrsteele09/go-kvstore/kvstore"
-	"github.com/pkg/errors"
 )
 
-// Filesystem is responsible for persisting key-values to a filesystem.
+const (
+	metaDataFilename = "metadata.json"
+	dataFilename     = "data.bin"
+	fileMode         = 0700
+)
+
+// Persistor is responsible for persisting key-values to a filesystem.
 // It uses folders as keys and files within those folders as values.
-type Filesystem struct {
-	folder string
+type Persistor struct {
+	rootFS *os.Root
 }
 
-// NewFsPersistence initializes a new Filesystem persistence object.
-func NewFsPersistence(folder string) *Filesystem {
-	return &Filesystem{folder: folder}
+// New initializes a new Filesystem persistence object.
+func New(folder string) *Persistor {
+	rootFS, err := os.OpenRoot(folder)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to open root: %v", err))
+	}
+	return &Persistor{
+		rootFS: rootFS,
+	}
 }
 
 // Close cleans up resources. Currently, it does nothing.
-func (fs Filesystem) Close() {
-	// Intentionally left empty
+func (p Persistor) Close() {
+	p.rootFS.Close()
 }
 
 // Keys returns a list of keys available in the folder.
-func (fs Filesystem) Keys() ([]string, error) {
-	fileInfoList, err := os.ReadDir(fs.folder)
+func (p Persistor) Keys() ([]string, error) {
+	f, err := p.rootFS.Open(".")
 	if err != nil {
-		return nil, errors.Wrap(err, "Keys: ReadDir")
+		return nil, fmt.Errorf("Keys: Open: %w", err)
+	}
+	defer f.Close()
+
+	fileInfoList, err := f.ReadDir(-1)
+	if err != nil {
+		return nil, fmt.Errorf("Keys: ReadDir: %w", err)
 	}
 
 	var keys []string
@@ -43,25 +61,25 @@ func (fs Filesystem) Keys() ([]string, error) {
 }
 
 // Write writes the ValueItem to the folder specified by the key.
-func (fs Filesystem) Write(key string, data *kvstore.ValueItem) error {
-	targetFolder := path.Join(fs.folder, key)
-
-	if err := os.MkdirAll(targetFolder, fileMode); err != nil {
-		return errors.Wrap(err, "Write: MkdirAll")
+func (p Persistor) Write(key string, data *kvstore.ValueItem) error {
+	if err := p.rootFS.MkdirAll(key, fileMode); err != nil {
+		return fmt.Errorf("Write: MkdirAll: %w", err)
 	}
 
 	serializedData, err := json.Marshal(data)
 	if err != nil {
-		return errors.Wrap(err, "Write: Marshal")
+		return fmt.Errorf("Write: Marshal: %w", err)
 	}
 
-	if err := os.WriteFile(path.Join(targetFolder, metaDataFilename), serializedData, fileMode); err != nil {
-		return errors.Wrap(err, "Write: WriteFile metadata")
+	metadataPath := path.Join(key, metaDataFilename)
+	if err := p.rootFS.WriteFile(metadataPath, serializedData, fileMode); err != nil {
+		return fmt.Errorf("Write: WriteFile metadata: %w", err)
 	}
 
 	if data.Data != nil {
-		if err := os.WriteFile(path.Join(targetFolder, dataFilename), data.Data, fileMode); err != nil {
-			return errors.Wrap(err, "Write: WriteFile data")
+		dataPath := path.Join(key, dataFilename)
+		if err := p.rootFS.WriteFile(dataPath, data.Data, fileMode); err != nil {
+			return fmt.Errorf("Write: WriteFile data: %w", err)
 		}
 	}
 
@@ -69,36 +87,36 @@ func (fs Filesystem) Write(key string, data *kvstore.ValueItem) error {
 }
 
 // Delete removes the folder specified by the key.
-func (fs Filesystem) Delete(key string) error {
-	targetFolder := path.Join(fs.folder, key)
-	if err := os.RemoveAll(targetFolder); err != nil {
-		return errors.Wrap(err, "Delete: RemoveAll")
+func (p Persistor) Delete(key string) error {
+	if err := p.rootFS.RemoveAll(key); err != nil {
+		return fmt.Errorf("Delete: RemoveAll: %w", err)
 	}
 	return nil
 }
 
 // Read retrieves the ValueItem identified by the key.
-func (fs Filesystem) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
-	targetFolder := path.Join(fs.folder, key)
+func (p Persistor) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
+	metadataPath := path.Join(key, metaDataFilename)
 
-	metaData, err := os.ReadFile(path.Join(targetFolder, metaDataFilename))
+	metaData, err := p.rootFS.ReadFile(metadataPath)
 	if err != nil {
-		return nil, errors.Wrap(err, "Read: ReadFile metadata")
+		return nil, fmt.Errorf("Read: ReadFile metadata: %w", err)
 	}
 
 	var valueItem kvstore.ValueItem
 	if err := json.Unmarshal(metaData, &valueItem); err != nil {
-		return nil, errors.Wrap(err, "Read: Unmarshal")
+		return nil, fmt.Errorf("Read: Unmarshal: %w", err)
 	}
 
 	if readValue {
-		data, err := os.ReadFile(path.Join(targetFolder, dataFilename))
+		dataPath := path.Join(key, dataFilename)
+		data, err := p.rootFS.ReadFile(dataPath)
 		if err != nil {
-			return nil, errors.Wrap(err, "Read: ReadFile data")
+			return nil, fmt.Errorf("Read: ReadFile data: %w", err)
 		}
 
 		if err := valueItem.SetData(data); err != nil {
-			return nil, errors.Wrap(err, "Read: SetData")
+			return nil, fmt.Errorf("Read: SetData: %w", err)
 		}
 	}
 

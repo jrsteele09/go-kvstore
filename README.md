@@ -37,10 +37,10 @@ import (
 
 func main() {
 	// Initialize kvstore without persistence
-	kv := kvstore.New()
+	kv, _ := kvstore.New()
 
 	// Set a value
-	kv.Set("name", "John")
+	kv.Set("name", []byte("John"))
 
 	// Get the value
 	value, _ := kv.Get("name")
@@ -77,23 +77,23 @@ import (
 
 func main() {
 	// Create a Filesystem DataPersister instance
-	fsPersistence := persistence.NewFsPersistence("testFolder")
+	fsPersistence := persistence.New("testFolder")
 
 	// Create a buffered DataPersister
-	bufferedPersistence := persistence.NewPersistenceBuffer(fsPersistence, 10)
+	bufferedPersistence := persistence.NewBuffer(fsPersistence, 10)
 
 	// Initialize kvstore with the buffered DataPersister
-	kv := kvstore.New(kvstore.WithPersistenceOption(bufferedPersistence))
+	kv, _ := kvstore.New(kvstore.WithPersistenceOption(bufferedPersistence))
 
 	// Now, kv will use fsPersistence wrapped in bufferedPersistence for data persistence
 	// Any previously persisted data will be reloaded into the cache
 
 	// Set a value
-	kv.Set("name", "John")
+	kv.Set("name", []byte("John"))
 
 	// Get the value
 	value, _ := kv.Get("name")
-	fmt.Println("Name:", value)
+	fmt.Println("Name:", string(value))
 
     // Close the kvstore
 	kv.Close()
@@ -114,10 +114,11 @@ if err != nil {
 #### Get a Value
 
 ```go
-value, err := kv.Get("key")
+value, err := kv.Get("key") // Returns []byte
 if err != nil {
     // Handle error
 }
+fmt.Println(string(value)) // Convert to string if needed
 ```
 
 #### Delete a Value
@@ -143,7 +144,12 @@ if err != nil {
 #### Query Keys
 
 ```go
-keys, err := kv.QueryKeys("key_prefix")
+import "time"
+
+// Query keys created between two timestamps
+from := time.Now().Add(-24 * time.Hour)
+to := time.Now()
+keys, err := kv.QueryKeys(from, to)
 if err != nil {
     // Handle error
 }
