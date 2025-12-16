@@ -100,8 +100,13 @@ func (kv *Store) Get(key string) ([]byte, error) {
 	if mv.dataLoaded {
 		return mv.Data, nil
 	}
+	data, err := kv.readFromFirstStore(key)
+	if err != nil {
+		return nil, fmt.Errorf("Store.Get kv.readFromFirstStore: %w", err)
+	}
 
-	return kv.readFromFirstStore(key)
+	kv.Set(key, data)
+	return data, nil
 }
 
 // Delete removes a key and its value from the Store.
@@ -248,7 +253,11 @@ func (kv *Store) SetCounterLimits(key string, min, max int64) error {
 	defer kv.lock.Unlock()
 
 	if mv, ok = kv.data[key]; !ok {
-		return fmt.Errorf("Store.SetCounterLimits key \"%s\" does not exist", key)
+		intStr := fmt.Sprintf("%d", min)
+		if err := kv.setValue(key, []byte(intStr)); err != nil {
+			return fmt.Errorf("Store.SetCounterLimits kv.setValue: %w", err)
+		}
+		mv = kv.data[key]
 	}
 	if mv.Counter == nil {
 		return fmt.Errorf("Store.SetCounterLimits key \"%s\" is not a counter", key)

@@ -18,6 +18,7 @@ func TestStoreCrud(t *testing.T) {
 	const key = "k1:102"
 	const data = "TestStoreCrud"
 	const folder = "TestStoreCrud"
+	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
 	require.NoError(t, err)
@@ -33,6 +34,7 @@ func TestStoreCrud(t *testing.T) {
 
 func BenchmarkMemcacheDSetGetDelete(b *testing.B) {
 	const folder = "TestStoreCrud"
+	os.MkdirAll(folder, 0755)
 	defer os.RemoveAll(folder)
 	s, _ := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
 
@@ -49,6 +51,7 @@ func TestStoreCrudInteger(t *testing.T) {
 	const key = "k1:200"
 	const data = "10"
 	const folder = "TestStoreCrudInteger"
+	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
 	require.NoError(t, err)
@@ -65,20 +68,23 @@ func TestStoreCrudInteger(t *testing.T) {
 func TestStoreIntegerCounter(t *testing.T) {
 	const key = "k1:200"
 	const folder = "TestStoreIntegerCounter"
+	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
 	require.NoError(t, err)
+	require.NoError(t, s.SetCounterLimits(key, -1, 1))
+
 	i, err := s.Counter(key, 1)
-	require.Equal(t, int64(1), i)
 	require.NoError(t, err)
-
-	i, err = s.Counter(key, -1)
 	require.Equal(t, int64(0), i)
-	require.NoError(t, err)
 
 	i, err = s.Counter(key, -1)
-	require.Equal(t, int64(-1), i)
 	require.NoError(t, err)
+	require.Equal(t, int64(-1), i)
+
+	i, err = s.Counter(key, -1)
+	require.Error(t, err)
+	require.Equal(t, int64(0), i)
 
 	s.SetCounterLimits(key, -1, 1)
 	require.NoError(t, s.Set(key, []byte("0")))
@@ -102,6 +108,7 @@ func TestEvictionCrud(t *testing.T) {
 	const key = "k1:102"
 	const data = "TestStoreCrud"
 	const folder = "TestEvictionCrud"
+	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
 	require.NoError(t, err)
@@ -116,6 +123,7 @@ func TestMemoryUnload(t *testing.T) {
 	const key = "k1:102"
 	const data = "TestStoreCrud"
 	const folder = "TestMemoryUnload"
+	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 
 	s, err := kvstore.New(
@@ -160,6 +168,7 @@ func TestPersistenceStartup(t *testing.T) {
 	const key = "k1:103"
 	const data = "TestStoreCrud"
 	const folder = "TestPersistenceStartup"
+	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
 	require.NoError(t, err)
@@ -179,6 +188,7 @@ func TestStoreCrudThreaded(t *testing.T) {
 	const keyFormat = "Key:%d"
 	const dataFormat = "Key%d-DataStore"
 	const nRoutines = 100
+	require.NoError(t, os.MkdirAll(testFolder, 0755))
 	defer os.RemoveAll(testFolder)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(testFolder), 10)))
 	require.NoError(t, err)
@@ -230,6 +240,7 @@ func TestThreadedEviction(t *testing.T) {
 	const keyFormat = "Key:%d"
 	const dataFormat = "Key%d-DataStore"
 	const nRoutines = 100
+	require.NoError(t, os.MkdirAll(testFolder, 0755))
 	defer os.RemoveAll(testFolder)
 	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(testFolder), 10)))
 	require.NoError(t, err)
@@ -278,6 +289,8 @@ func TestMultiPersistence(t *testing.T) {
 	const folder = "TestMultiPersistence"
 	const backupFolder = "TestMultiPersistenceBackup"
 
+	require.NoError(t, os.MkdirAll(folder, 0755))
+	require.NoError(t, os.MkdirAll(backupFolder, 0755))
 	defer func() {
 		os.RemoveAll(folder)
 		os.RemoveAll(backupFolder)
@@ -298,6 +311,7 @@ func TestTTL(t *testing.T) {
 	const key = "k1:101"
 	const data = "TestTTL"
 	const folder = "TestTTL"
+	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.New(folder)))
 
