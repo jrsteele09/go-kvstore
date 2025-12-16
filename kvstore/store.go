@@ -80,7 +80,7 @@ func (kv *Store) Set(key string, value []byte) error {
 	}
 	kv.lock.Lock()
 	defer kv.lock.Unlock()
-	return kv.setData(key, value)
+	return kv.setValue(key, value)
 }
 
 // Get retrieves the value associated with a key from the Store.
@@ -213,7 +213,7 @@ func (kv *Store) Counter(key string, delta int64) (int64, error) {
 	var ok bool
 	if mv, ok = kv.data[key]; !ok {
 		intStr := fmt.Sprintf("%d", delta)
-		if err := kv.setData(key, []byte(intStr)); err != nil {
+		if err := kv.setValue(key, []byte(intStr)); err != nil {
 			return 0, fmt.Errorf("Store.Counter kv.setData: %w", err)
 		}
 		return delta, nil
@@ -231,7 +231,7 @@ func (kv *Store) Counter(key string, delta int64) (int64, error) {
 	} else if i < mv.Counter.Min {
 		return 0, errors.New("Store.Counter minimum value reached")
 	}
-	if err := kv.setData(key, []byte(fmt.Sprintf("%d", i))); err != nil {
+	if err := kv.setValue(key, []byte(fmt.Sprintf("%d", i))); err != nil {
 		return 0, fmt.Errorf("Store.Counter setData: %w", err)
 	}
 	return i, nil
@@ -258,7 +258,7 @@ func (kv *Store) SetCounterLimits(key string, min, max int64) error {
 	return kv.persistData(key)
 }
 
-func (kv *Store) setData(key string, data []byte) error {
+func (kv *Store) setValue(key string, data []byte) error {
 	mv, ok := kv.data[key]
 	if !ok {
 		mv = NewValueItem(data, kv.nowFunc())

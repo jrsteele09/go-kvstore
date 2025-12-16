@@ -194,6 +194,51 @@ fmt.Println("Current counter value:", counterValue)
 
 ## Documentation
 
+### Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Client Application"
+        Client[Client Code]
+    end
+    
+    subgraph "KVStore"
+        Store[Store<br/>Thread-Safe In-Memory Cache]
+        Store --> |Get/Set/Delete/Keys| Data[Data Map<br/>key → ValueItem]
+        Store --> |TTL Management| Eviction[Eviction Controller<br/>Background Process]
+        Store --> |Persist| Persist[DataPersister Interface]
+    end
+    
+    subgraph "Persistence Layer"
+        Persist -.-> Buffer[Buffer<br/>Buffered Persistence]
+        Persist -.-> FileSystem[Persistor<br/>Filesystem Persistence]
+        Buffer --> FileSystem
+        FileSystem --> |os.Root API| RootFS[Root Filesystem<br/>Sandboxed Directory]
+    end
+    
+    subgraph "Storage"
+        RootFS --> Disk[(Disk Storage<br/>Folders & Files)]
+    end
+    
+    Client --> |New/Set/Get/Delete/Keys<br/>Counter/TTL/Touch| Store
+    
+    style Store fill:#e1f5ff
+    style Data fill:#fff4e1
+    style Eviction fill:#ffe1e1
+    style Persist fill:#e1ffe1
+    style RootFS fill:#f0e1ff
+    style Disk fill:#e8e8e8
+```
+
+### Component Descriptions
+
+- **Store**: Thread-safe in-memory key-value store with optional persistence
+- **ValueItem**: Holds data, timestamp, TTL, and optional counter constraints
+- **DataPersister**: Interface for pluggable persistence backends
+- **Buffer**: Asynchronous buffered writes for better performance
+- **Persistor**: Filesystem-based persistence using `os.Root` for security
+- **Eviction Controller**: Background process that removes expired keys and unloads old data
+
 For full documentation, please refer to the [GoDoc documentation](https://pkg.go.dev/github.com/jrsteele09/go-kvstore).
 
 ## Contributing
