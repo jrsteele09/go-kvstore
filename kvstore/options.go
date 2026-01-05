@@ -34,16 +34,3 @@ func WithPersistenceOption(persistence ...DataPersister) StoreOption {
 		s.persistence = persistence
 	}
 }
-
-// WithNowFuncOption returns a StoreOption that allows you to configure the function
-// used to fetch the current time. This is especially useful for testing scenarios where
-// you want to control the time flow.
-//
-// Example:
-//
-//	NewStore(WithNowFuncOption(func() time.Time { return someFixedTime }))
-func WithNowFuncOption(nowFunc func() time.Time) StoreOption {
-	return func(s *Store) {
-		s.nowFunc = nowFunc
-	}
-}

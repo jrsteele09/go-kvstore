@@ -12,10 +12,11 @@ var validRunesMap = map[rune]bool{
 	'+': true,
 	'-': true,
 	'_': true,
+	'/': true,
 }
 
 // KeyValid returns true if the key contains valid characters.
-// The valid characters include Unicode letters, digits, and specific special characters: ':', '@', '#', '+', '-', '_'.
+// The valid characters include Unicode letters, digits, and specific special characters: ':', '@', '#', '+', '-', '_', '/'.
 func KeyValid(key string) bool {
 	for _, r := range key {
 		if !isValidRune(r) {

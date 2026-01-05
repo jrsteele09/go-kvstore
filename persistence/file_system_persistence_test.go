@@ -35,7 +35,8 @@ func TestPersistor_NewAndClose(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	require.NotNil(t, p)
 	require.NotNil(t, p.rootFS)
 
@@ -45,7 +46,7 @@ func TestPersistor_NewAndClose(t *testing.T) {
 	})
 
 	// After close, operations should fail
-	_, err := p.Keys()
+	_, err = p.Keys()
 	assert.Error(t, err, "operations after close should fail")
 }
 
@@ -54,7 +55,8 @@ func TestPersistor_Write(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
 	key := "test_key"
@@ -65,7 +67,7 @@ func TestPersistor_Write(t *testing.T) {
 		Counter: nil,
 	}
 
-	err := p.Write(key, value)
+	err = p.Write(key, value)
 	assert.NoError(t, err)
 
 	// Verify the directory and files were created
@@ -88,7 +90,8 @@ func TestPersistor_WriteWithNilData(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
 	key := "test_key_nil"
@@ -99,7 +102,7 @@ func TestPersistor_WriteWithNilData(t *testing.T) {
 		Counter: nil,
 	}
 
-	err := p.Write(key, value)
+	err = p.Write(key, value)
 	assert.NoError(t, err)
 
 	// Data file should not exist when Data is nil
@@ -113,7 +116,8 @@ func TestPersistor_Read(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
 	key := "test_key"
@@ -126,7 +130,7 @@ func TestPersistor_Read(t *testing.T) {
 	}
 
 	// Write first
-	err := p.Write(key, value)
+	err = p.Write(key, value)
 	require.NoError(t, err)
 
 	// Read with value
@@ -149,10 +153,11 @@ func TestPersistor_ReadNonExistent(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
-	_, err := p.Read("non_existent_key", true)
+	_, err = p.Read("non_existent_key", true)
 	assert.Error(t, err)
 }
 
@@ -161,7 +166,8 @@ func TestPersistor_Delete(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
 	key := "test_key"
@@ -173,7 +179,7 @@ func TestPersistor_Delete(t *testing.T) {
 	}
 
 	// Write first
-	err := p.Write(key, value)
+	err = p.Write(key, value)
 	require.NoError(t, err)
 
 	// Verify it exists
@@ -195,7 +201,8 @@ func TestPersistor_Keys(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
 	// Initially empty
@@ -228,7 +235,8 @@ func TestPersistor_WriteReadDeleteCycle(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
 	key := "cycle_key"
@@ -241,7 +249,7 @@ func TestPersistor_WriteReadDeleteCycle(t *testing.T) {
 	}
 
 	// Write
-	err := p.Write(key, value)
+	err = p.Write(key, value)
 	assert.NoError(t, err)
 
 	// Read
@@ -279,7 +287,8 @@ func TestPersistor_NoResourceLeak(t *testing.T) {
 
 	// Create and close multiple persistors to test for resource leaks
 	for i := 0; i < 100; i++ {
-		p := New(testDir)
+		p, err := New(testDir)
+		require.NoError(t, err)
 
 		// Do some operations
 		key := "leak_test_key"
@@ -290,7 +299,7 @@ func TestPersistor_NoResourceLeak(t *testing.T) {
 			Counter: nil,
 		}
 
-		err := p.Write(key, value)
+		err = p.Write(key, value)
 		require.NoError(t, err)
 
 		_, err = p.Read(key, true)
@@ -309,7 +318,8 @@ func TestPersistor_WithCounter(t *testing.T) {
 	require.NoError(t, os.MkdirAll(testDir, 0755))
 	defer os.RemoveAll(testDir)
 
-	p := New(testDir)
+	p, err := New(testDir)
+	require.NoError(t, err)
 	defer p.Close()
 
 	key := "counter_key"
@@ -324,7 +334,7 @@ func TestPersistor_WithCounter(t *testing.T) {
 	}
 
 	// Write
-	err := p.Write(key, value)
+	err = p.Write(key, value)
 	assert.NoError(t, err)
 
 	// Read

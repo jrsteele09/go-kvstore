@@ -12,6 +12,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var nowFunc = time.Now
+
 // TTLType defines the time-to-live (TTL) in seconds for a key/data pair.
 type TTLType int64
 
@@ -25,17 +27,16 @@ const (
 // Error definitions for common error cases.
 var (
 	// ErrNotFound returned when a key is not found during read or delete operations.
-	ErrNotFound error = errors.New("key not found")
+	ErrNotFound = errors.New("key not found")
 
 	// ErrKeyInvalid returned when a key contains invalid characters.
-	ErrKeyInvalid error = errors.New("key contains invalid characters")
+	ErrKeyInvalid = errors.New("key contains invalid characters")
 )
 
 // Store represents the key-value storage system.
 // It is thread-safe and allows for optional data persistence.
 type Store struct {
 	lock            sync.RWMutex
-	nowFunc         func() time.Time
 	data            map[string]*ValueItem
 	persistence     []DataPersister
 	evictionFreq    time.Duration
@@ -52,102 +53,112 @@ func New(options ...StoreOption) (*Store, error) {
 		persistence:     make([]DataPersister, 0),
 		evictionFreq:    0,
 		unloadAfterTime: 0,
-		nowFunc:         time.Now,
 	}
 
 	for _, opt := range options {
 		opt(store)
 	}
 
-	store.ctx, store.cancelFunc = context.WithCancel(context.Background())
-
 	if err := store.initPersistence(); err != nil {
 		return nil, err
 	}
+	store.ctx, store.cancelFunc = context.WithCancel(context.Background())
 	go store.evictionController()
 	return store, nil
 }
 
 // Close stops the internal cache management routines.
-func (kv *Store) Close() {
-	kv.cancelFunc()
+func (s *Store) Close() {
+	s.cancelFunc()
 }
 
 // Set stores a key-value pair into the Store.
-func (kv *Store) Set(key string, value []byte) error {
+func (s *Store) Set(key string, value []byte) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
 	}
-	kv.lock.Lock()
-	defer kv.lock.Unlock()
-	return kv.setValue(key, value)
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.setValue(key, value)
 }
 
 // Get retrieves the value associated with a key from the Store.
-func (kv *Store) Get(key string) ([]byte, error) {
+func (s *Store) Get(key string) ([]byte, error) {
 	if !KeyValid(key) {
 		return nil, ErrKeyInvalid
 	}
 
-	kv.lock.RLock()
-	mv, ok := kv.data[key]
-	kv.lock.RUnlock()
+	var expired, dataloaded bool
+	var loadedData []byte
 
-	if !ok || mv.expired(kv.nowFunc()) {
+	s.lock.RLock()
+	mv, ok := s.data[key]
+	if ok {
+		expired = mv.expired(nowFunc())
+		dataloaded = mv.dataLoaded
+		if dataloaded {
+			loadedData = make([]byte, len(mv.Data))
+			copy(loadedData, mv.Data)
+		}
+	}
+	s.lock.RUnlock()
+
+	if !ok || expired {
 		return nil, ErrNotFound
 	}
 
-	if mv.dataLoaded {
-		return mv.Data, nil
-	}
-	data, err := kv.readFromFirstStore(key)
-	if err != nil {
-		return nil, fmt.Errorf("Store.Get kv.readFromFirstStore: %w", err)
+	if dataloaded {
+		return loadedData, nil
 	}
 
-	kv.Set(key, data)
+	data, err := s.readFromFirstStore(key)
+	if err != nil {
+		return nil, fmt.Errorf("Store.Get s.readFromFirstStore: %w", err)
+	}
+
+	s.Set(key, data)
 	return data, nil
 }
 
 // Delete removes a key and its value from the Store.
-func (kv *Store) Delete(key string) error {
-	kv.lock.Lock()
-	defer kv.lock.Unlock()
-	return kv.delete(key)
+func (s *Store) Delete(key string) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.delete(key)
 }
 
 // InMemory checks if the value for a given key is loaded into memory.
-func (kv *Store) InMemory(key string) bool {
-	kv.lock.RLock()
-	defer kv.lock.RUnlock()
-	if _, ok := kv.data[key]; !ok {
+func (s *Store) InMemory(key string) bool {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	if _, ok := s.data[key]; !ok {
 		return false
 	}
-	return kv.data[key].dataLoaded
+	return s.data[key].dataLoaded
 }
 
 // Keys returns a slice of all keys currently in the Store.
-func (kv *Store) Keys() ([]string, error) {
-	kv.lock.RLock()
-	defer kv.lock.RUnlock()
-	keys := make([]string, 0)
-	for k := range kv.data {
+func (s *Store) Keys() []string {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	keys := make([]string, 0, len(s.data))
+	for k := range s.data {
 		keys = append(keys, k)
 	}
-	return keys, nil
+	return keys
 }
 
 // QueryKeys returns the keys that have been created between a time period
-func (kv *Store) QueryKeys(from, to time.Time) ([]string, error) {
-	kv.lock.RLock()
-	defer kv.lock.RUnlock()
+func (s *Store) QueryKeys(from, to time.Time) ([]string, error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 
-	keys := make([]string, 0)
-	for k, v := range kv.data {
-		if v.expired(kv.nowFunc()) {
+	keys := make([]string, 0, len(s.data))
+	for k, v := range s.data {
+		if v.expired(nowFunc()) {
 			continue
 		}
-		if (v.Ts.Equal(from) || v.Ts.After(from)) && (v.Ts.Equal(to) || v.Ts.Before(to)) {
+		if !v.Ts.Before(from) && !v.Ts.After(to) {
 			keys = append(keys, k)
 		}
 	}
@@ -155,30 +166,30 @@ func (kv *Store) QueryKeys(from, to time.Time) ([]string, error) {
 }
 
 // SetTTL sets the time-to-live (TTL) for a specific key.
-func (kv *Store) SetTTL(key string, ttl int64) error {
+func (s *Store) SetTTL(key string, ttl int64) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
 	}
 
-	kv.lock.Lock()
-	defer kv.lock.Unlock()
-	return kv.setTTL(key, TTLType(ttl))
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.setTTL(key, TTLType(ttl))
 }
 
 // TTL retrieves the remaining TTL for a given key.
-func (kv *Store) TTL(key string) TTLType {
+func (s *Store) TTL(key string) TTLType {
 	if !KeyValid(key) {
 		return TTLKeyNotExist
 	}
 
-	kv.lock.RLock()
-	defer kv.lock.RUnlock()
-	if _, ok := kv.data[key]; !ok {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	if _, ok := s.data[key]; !ok {
 		return TTLKeyNotExist
 	}
-	mv := kv.data[key]
+	mv := s.data[key]
 	expireTime := mv.Ts.Add(time.Duration(mv.TTL) * time.Second)
-	ttl := expireTime.Sub(kv.nowFunc()).Seconds()
+	ttl := expireTime.Sub(nowFunc()).Seconds()
 	ttl = math.Ceil(ttl)
 	if ttl < 0 {
 		ttl = 0
@@ -187,39 +198,44 @@ func (kv *Store) TTL(key string) TTLType {
 }
 
 // Touch updates the last-accessed time for a given key.
-func (kv *Store) Touch(key string) error {
+func (s *Store) Touch(key string) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
 	}
 
-	kv.lock.Lock()
-	defer kv.lock.Unlock()
-	mv, ok := kv.data[key]
-	if !ok || mv.expired(kv.nowFunc()) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	mv, ok := s.data[key]
+	if !ok || mv.expired(nowFunc()) {
 		return ErrNotFound
 	}
-	mv.Ts = kv.nowFunc()
-	if err := kv.persistData(key); err != nil {
-		return fmt.Errorf("Store.Touch kv.persist: %w", err)
+	mv.Ts = nowFunc()
+	if err := s.persistData(key); err != nil {
+		return fmt.Errorf("Store.Touch s.persist: %w", err)
 	}
 	return nil
 }
 
 // Counter initializes or updates a counter value for a given key.
-func (kv *Store) Counter(key string, delta int64) (int64, error) {
+func (s *Store) Counter(key string, delta int64) (int64, error) {
 	if !KeyValid(key) {
 		return 0, ErrKeyInvalid
 	}
 
-	kv.lock.Lock()
-	defer kv.lock.Unlock()
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	var mv *ValueItem
-	var ok bool
-	if mv, ok = kv.data[key]; !ok {
-		intStr := fmt.Sprintf("%d", delta)
-		if err := kv.setValue(key, []byte(intStr)); err != nil {
-			return 0, fmt.Errorf("Store.Counter kv.setData: %w", err)
+	var (
+		mv *ValueItem
+		ok bool
+	)
+	if mv, ok = s.data[key]; !ok {
+		// Create new counter with default constraints
+		mv = NewValueItem([]byte(fmt.Sprintf("%d", delta)), nowFunc())
+		mv.Counter = &CounterConstraints{Min: math.MinInt64, Max: math.MaxInt64}
+		s.data[key] = mv
+		if err := s.persistData(key); err != nil {
+			return 0, fmt.Errorf("Store.Counter s.persist: %w", err)
 		}
 		return delta, nil
 	}
@@ -228,67 +244,68 @@ func (kv *Store) Counter(key string, delta int64) (int64, error) {
 		return 0, fmt.Errorf("Store.Counter strconv.ParseInt: %w", err)
 	}
 	if mv.Counter == nil {
-		return 0, fmt.Errorf("Store.Counter counter boundaries not set: %w", err)
+		return 0, errors.New("Store.Counter counter boundaries not set")
 	}
 	i += delta
 	if i > mv.Counter.Max {
 		return 0, errors.New("Store.Counter maximum value reached")
-	} else if i < mv.Counter.Min {
+	}
+	if i < mv.Counter.Min {
 		return 0, errors.New("Store.Counter minimum value reached")
 	}
-	if err := kv.setValue(key, []byte(fmt.Sprintf("%d", i))); err != nil {
+	if err := s.setValue(key, []byte(fmt.Sprintf("%d", i))); err != nil {
 		return 0, fmt.Errorf("Store.Counter setData: %w", err)
 	}
 	return i, nil
 }
 
 // SetCounterLimits sets the min/max limits for a counter associated with a key.
-func (kv *Store) SetCounterLimits(key string, min, max int64) error {
+func (s *Store) SetCounterLimits(key string, min, max int64) error {
 	if !KeyValid(key) {
 		return ErrKeyInvalid
 	}
-	var mv *ValueItem
-	var ok bool
-	kv.lock.Lock()
-	defer kv.lock.Unlock()
+	var (
+		mv *ValueItem
+		ok bool
+	)
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	if mv, ok = kv.data[key]; !ok {
-		intStr := fmt.Sprintf("%d", min)
-		if err := kv.setValue(key, []byte(intStr)); err != nil {
-			return fmt.Errorf("Store.SetCounterLimits kv.setValue: %w", err)
-		}
-		mv = kv.data[key]
+	if mv, ok = s.data[key]; !ok {
+		// Create new counter starting at min value
+		mv = NewValueItem([]byte(fmt.Sprintf("%d", min)), nowFunc())
+		mv.Counter = &CounterConstraints{Min: min, Max: max}
+		s.data[key] = mv
+		return s.persistData(key)
 	}
 	if mv.Counter == nil {
 		return fmt.Errorf("Store.SetCounterLimits key \"%s\" is not a counter", key)
 	}
-	kv.data[key].Counter.Max = max
-	kv.data[key].Counter.Min = min
-	return kv.persistData(key)
+	mv.Counter.Max = max
+	mv.Counter.Min = min
+	return s.persistData(key)
 }
 
-func (kv *Store) setValue(key string, data []byte) error {
-	mv, ok := kv.data[key]
+func (s *Store) setValue(key string, data []byte) error {
+	mv, ok := s.data[key]
 	if !ok {
-		mv = NewValueItem(data, kv.nowFunc())
+		mv = NewValueItem(data, nowFunc())
 	}
 
-	if err := mv.SetData(data); err != nil {
-		return fmt.Errorf("Store.setData mv.SetData: %w", err)
-	}
-	mv.Ts = kv.nowFunc()
-	kv.data[key] = mv
-	return kv.persistData(key)
+	mv.SetData(data)
+	mv.Ts = nowFunc()
+	s.data[key] = mv
+	return s.persistData(key)
 }
 
-func (kv *Store) delete(key string) error {
-	if _, ok := kv.data[key]; !ok {
+func (s *Store) delete(key string) error {
+	if _, ok := s.data[key]; !ok {
 		return ErrNotFound
 	}
-	delete(kv.data, key)
+	delete(s.data, key)
 
 	var returnError error
-	for _, p := range kv.persistence {
+	for _, p := range s.persistence {
 		if err := p.Delete(key); err != nil {
 			returnError = fmt.Errorf("p.Delete: %w", err)
 		}
@@ -296,69 +313,71 @@ func (kv *Store) delete(key string) error {
 	return returnError
 }
 
-func (kv *Store) readFromFirstStore(key string) ([]byte, error) {
-	if len(kv.persistence) == 0 {
+func (s *Store) readFromFirstStore(key string) ([]byte, error) {
+	if len(s.persistence) == 0 {
 		return nil, nil
 	}
 
-	mv, err := kv.persistence[0].Read(key, true)
+	mv, err := s.persistence[0].Read(key, true)
 	if err != nil {
 		return nil, err
 	}
-	kv.lock.Lock()
-	kv.data[key] = mv
-	kv.lock.Unlock()
+	s.lock.Lock()
+	if existing, ok := s.data[key]; ok && !existing.dataLoaded {
+		s.data[key] = mv
+	}
+	s.lock.Unlock()
 	return mv.Data, nil
 }
 
-func (kv *Store) setTTL(key string, ttl TTLType) error {
-	if _, ok := kv.data[key]; !ok {
+func (s *Store) setTTL(key string, ttl TTLType) error {
+	if _, ok := s.data[key]; !ok {
 		return ErrNotFound
 	}
-	kv.data[key].TTL = ttl
-	if err := kv.persistData(key); err != nil {
-		return fmt.Errorf("store.setTTL kv.persist: %w", err)
+	s.data[key].TTL = ttl
+	if err := s.persistData(key); err != nil {
+		return fmt.Errorf("store.setTTL s.persist: %w", err)
 	}
 	return nil
 }
 
-func (kv *Store) initPersistence() error {
-	if len(kv.persistence) == 0 {
+func (s *Store) initPersistence() error {
+	if len(s.persistence) == 0 {
 		return nil
 	}
 
-	keys, err := kv.persistence[0].Keys()
+	keys, err := s.persistence[0].Keys()
 	if err != nil {
 		log.Info().Msgf("store.InitialisePersistenceControllers %s", err.Error())
 		return nil
 	}
 
 	for _, k := range keys {
-		mv, err := kv.persistence[0].Read(k, false)
+		mv, err := s.persistence[0].Read(k, false)
 		if err != nil {
-			kv.data[k] = &ValueItem{
-				Ts:         time.Now(),
+			s.data[k] = &ValueItem{
+				Ts:         nowFunc(),
 				dataLoaded: false,
 			}
 			continue
 		}
-		kv.data[k] = mv
+		s.data[k] = mv
 	}
 
 	return nil
 }
 
-func (kv *Store) persistData(key string) error {
-	if len(kv.persistence) == 0 {
+func (s *Store) persistData(key string) error {
+	if len(s.persistence) == 0 {
 		return nil
 	}
 
-	if _, ok := kv.data[key]; !ok {
+	if _, ok := s.data[key]; !ok {
 		return fmt.Errorf("persist key: %s does not exist", key)
 	}
 
-	mv := kv.data[key]
-	for _, d := range kv.persistence {
+	mv := s.data[key]
+	for _, d := range s.persistence {
 		if err := d.Write(key, mv); err != nil {
 			return fmt.Errorf("Store.persist Write error: %w", err)
 		}
@@ -366,46 +385,56 @@ func (kv *Store) persistData(key string) error {
 	return nil
 }
 
-func (kv *Store) evictionController() {
-	if kv.evictionFreq <= 0 {
+func (s *Store) evictionController() {
+	if s.evictionFreq <= 0 {
 		return
 	}
 
-	timer := time.NewTimer(kv.evictionFreq)
+	timer := time.NewTimer(s.evictionFreq)
 	defer timer.Stop()
 	for {
 		select {
 		case <-timer.C:
-			kv.runEvictionCheck()
-			timer.Reset(kv.evictionFreq)
-		case <-kv.ctx.Done():
+			s.runEvictionCheck()
+			timer.Reset(s.evictionFreq)
+		case <-s.ctx.Done():
 			return
 		}
 	}
 }
 
-func (kv *Store) runEvictionCheck() {
-	kv.lock.RLock()
-	timeNow := kv.nowFunc()
-	deletionKeys := make([]string, 0)
-	unloadKeys := make([]string, 0)
-	for k, v := range kv.data {
+func (s *Store) runEvictionCheck() {
+	s.lock.RLock()
+	timeNow := nowFunc()
+	var deletionKeys, unloadKeys []string
+	for k, v := range s.data {
 		if v.expired(timeNow) {
 			deletionKeys = append(deletionKeys, k)
-		} else if v.unload(timeNow, kv.unloadAfterTime) && len(kv.persistence) > 0 {
+		} else if v.unload(timeNow, s.unloadAfterTime) && len(s.persistence) > 0 {
 			unloadKeys = append(unloadKeys, k)
 		}
 	}
-	kv.lock.RUnlock()
-	kv.lock.Lock()
+	s.lock.RUnlock()
+
+	// Nothing to do
+	if len(deletionKeys) == 0 && len(unloadKeys) == 0 {
+		return
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// Delete expired keys
 	for _, k := range deletionKeys {
-		if err := kv.delete(k); err != nil {
-			log.Error().Msgf("[kvstore eviction] error deleting key %s error: %s", k, err.Error())
+		if err := s.delete(k); err != nil {
+			log.Error().Str("key", k).Err(err).Msg("kvstore eviction: failed to delete key")
 		}
 	}
+
+	// Unload data from memory (but keep metadata)
 	for _, k := range unloadKeys {
-		kv.data[k].dataLoaded = false
-		kv.data[k].Data = nil
+		if v, exists := s.data[k]; exists {
+			v.unloadData()
+		}
 	}
-	kv.lock.Unlock()
 }

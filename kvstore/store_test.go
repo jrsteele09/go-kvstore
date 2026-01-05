@@ -20,7 +20,11 @@ func TestStoreCrud(t *testing.T) {
 	const folder = "TestStoreCrud"
 	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
+	p, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))
 	b, err := s.Get(key)
@@ -36,7 +40,9 @@ func BenchmarkMemcacheDSetGetDelete(b *testing.B) {
 	const folder = "TestStoreCrud"
 	os.MkdirAll(folder, 0755)
 	defer os.RemoveAll(folder)
-	s, _ := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
+	p, _ := persistence.New(folder)
+	buf, _ := persistence.NewBuffer(p, 10)
+	s, _ := kvstore.New(kvstore.WithPersistenceOption(buf))
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("Key-%d", i)
@@ -53,7 +59,11 @@ func TestStoreCrudInteger(t *testing.T) {
 	const folder = "TestStoreCrudInteger"
 	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
+	p, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))
 	b, err := s.Get(key)
@@ -70,7 +80,11 @@ func TestStoreIntegerCounter(t *testing.T) {
 	const folder = "TestStoreIntegerCounter"
 	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
+	p, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 	require.NoError(t, s.SetCounterLimits(key, -1, 1))
 
@@ -110,7 +124,11 @@ func TestEvictionCrud(t *testing.T) {
 	const folder = "TestEvictionCrud"
 	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
-	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
+	p, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))
 	s.SetTTL(key, 1)
@@ -126,9 +144,13 @@ func TestMemoryUnload(t *testing.T) {
 	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
 
+	p, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
 	s, err := kvstore.New(
 		kvstore.WithUnloadFrequencyOption(10*time.Millisecond, 100*time.Millisecond),
-		kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)),
+		kvstore.WithPersistenceOption(buf),
 	)
 
 	require.NoError(t, err)
@@ -152,9 +174,7 @@ func TestGettingKeys(t *testing.T) {
 		require.NoError(t, s.Set(k, []byte(data)))
 	}
 
-	retrievedKeys, err := s.Keys()
-	require.NoError(t, err)
-
+	retrievedKeys := s.Keys()
 	sort.Slice(retrievedKeys, func(i, j int) bool {
 		return retrievedKeys[i] < retrievedKeys[j]
 	})
@@ -170,11 +190,19 @@ func TestPersistenceStartup(t *testing.T) {
 	const folder = "TestPersistenceStartup"
 	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
+	p, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))
 	time.Sleep(100 * time.Millisecond) // Wait for the write to happen
-	s2, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)))
+	p2, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf2, err := persistence.NewBuffer(p2, 10)
+	require.NoError(t, err)
+	s2, err := kvstore.New(kvstore.WithPersistenceOption(buf2))
 	require.NoError(t, err)
 	bytes, err := s2.Get(key)
 	require.NoError(t, err)
@@ -190,7 +218,11 @@ func TestStoreCrudThreaded(t *testing.T) {
 	const nRoutines = 100
 	require.NoError(t, os.MkdirAll(testFolder, 0755))
 	defer os.RemoveAll(testFolder)
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(testFolder), 10)))
+	p, err := persistence.New(testFolder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -207,7 +239,11 @@ func TestStoreCrudThreaded(t *testing.T) {
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond) // Wait for the write to happen
 
-	s2, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(testFolder), 10)))
+	p2, err := persistence.New(testFolder)
+	require.NoError(t, err)
+	buf2, err := persistence.NewBuffer(p2, 10)
+	require.NoError(t, err)
+	s2, err := kvstore.New(kvstore.WithPersistenceOption(buf2))
 	require.NoError(t, err)
 
 	// Read
@@ -242,7 +278,11 @@ func TestThreadedEviction(t *testing.T) {
 	const nRoutines = 100
 	require.NoError(t, os.MkdirAll(testFolder, 0755))
 	defer os.RemoveAll(testFolder)
-	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(testFolder), 10)))
+	p, err := persistence.New(testFolder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -273,7 +313,11 @@ func TestLoadFailure(t *testing.T) {
 	defer os.RemoveAll(testFolder)
 	os.MkdirAll(path.Join(testFolder, failKey), 0700)
 
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(testFolder), 10)))
+	p, err := persistence.New(testFolder)
+	require.NoError(t, err)
+	buf, err := persistence.NewBuffer(p, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
 
 	rd, err := s.Get(failKey)
@@ -296,11 +340,21 @@ func TestMultiPersistence(t *testing.T) {
 		os.RemoveAll(backupFolder)
 	}()
 
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(folder), 10)), kvstore.WithPersistenceOption(persistence.NewBuffer(persistence.New(backupFolder), 10)))
+	p1, err := persistence.New(folder)
+	require.NoError(t, err)
+	buf1, err := persistence.NewBuffer(p1, 10)
+	require.NoError(t, err)
+	p2, err := persistence.New(backupFolder)
+	require.NoError(t, err)
+	buf2, err := persistence.NewBuffer(p2, 10)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(buf1), kvstore.WithPersistenceOption(buf2))
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))
 	time.Sleep(100 * time.Millisecond)
-	s2, err := kvstore.New(kvstore.WithPersistenceOption(persistence.New(backupFolder)))
+	p3, err := persistence.New(backupFolder)
+	require.NoError(t, err)
+	s2, err := kvstore.New(kvstore.WithPersistenceOption(p3))
 	require.NoError(t, err)
 	readData, err := s2.Get(key)
 	require.NoError(t, err)
@@ -313,7 +367,9 @@ func TestTTL(t *testing.T) {
 	const folder = "TestTTL"
 	require.NoError(t, os.MkdirAll(folder, 0755))
 	defer os.RemoveAll(folder)
-	s, err := kvstore.New(kvstore.WithPersistenceOption(persistence.New(folder)))
+	p, err := persistence.New(folder)
+	require.NoError(t, err)
+	s, err := kvstore.New(kvstore.WithPersistenceOption(p))
 
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))

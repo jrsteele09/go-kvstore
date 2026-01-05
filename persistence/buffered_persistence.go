@@ -37,7 +37,10 @@ type Buffer struct {
 }
 
 // NewBuffer creates a new Buffer.
-func NewBuffer(persistence kvstore.DataPersister, bufferSize uint) Buffer {
+func NewBuffer(persistence kvstore.DataPersister, bufferSize uint) (*Buffer, error) {
+	if persistence == nil {
+		return nil, fmt.Errorf("persistence cannot be nil")
+	}
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	buffer := Buffer{
 		cb:          make(chan commandBuffer, bufferSize),
@@ -45,22 +48,22 @@ func NewBuffer(persistence kvstore.DataPersister, bufferSize uint) Buffer {
 		persistence: persistence,
 	}
 	go buffer.commandBuffer(ctx)
-	return buffer
+	return &buffer, nil
 }
 
 // Close cancels the background command processing.
-func (b Buffer) Close() {
+func (b *Buffer) Close() {
 	b.cancel()
 }
 
 // Write queues a write command.
-func (b Buffer) Write(key string, data *kvstore.ValueItem) error {
+func (b *Buffer) Write(key string, data *kvstore.ValueItem) error {
 	b.cb <- commandBuffer{cmdType: writeCommand, key: key, mv: data}
 	return nil
 }
 
 // Read queues a read command and waits for a response.
-func (b Buffer) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
+func (b *Buffer) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
 	cmd := readMetadataCommand
 	if readValue {
 		cmd = readValueCommand
@@ -76,18 +79,18 @@ func (b Buffer) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
 }
 
 // Delete queues a delete command.
-func (b Buffer) Delete(key string) error {
+func (b *Buffer) Delete(key string) error {
 	b.cb <- commandBuffer{cmdType: deleteCommand, key: key}
 	return nil
 }
 
 // Keys retrieves keys from the persistence layer.
-func (b Buffer) Keys() ([]string, error) {
+func (b *Buffer) Keys() ([]string, error) {
 	return b.persistence.Keys()
 }
 
 // commandBuffer processes commands.
-func (b Buffer) commandBuffer(ctx context.Context) {
+func (b *Buffer) commandBuffer(ctx context.Context) {
 	for {
 		select {
 		case command := <-b.cb:
@@ -100,7 +103,7 @@ func (b Buffer) commandBuffer(ctx context.Context) {
 }
 
 // processCommand processes an individual command.
-func (b Buffer) processCommand(command commandBuffer) {
+func (b *Buffer) processCommand(command commandBuffer) {
 	var err error
 	switch command.cmdType {
 	case writeCommand:

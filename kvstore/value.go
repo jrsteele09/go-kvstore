@@ -1,8 +1,6 @@
 package kvstore
 
 import (
-	"math"
-	"strconv"
 	"time"
 )
 
@@ -25,17 +23,6 @@ type ValueItem struct {
 
 // NewValueItem initializes a new ValueItem with a given timestamp.
 func NewValueItem(dataBytes []byte, ts time.Time) *ValueItem {
-	// Check if dataBytes is an integer and initialize counter constraints accordingly
-	if _, err := strconv.ParseInt(string(dataBytes), 10, 64); err == nil {
-		return &ValueItem{
-			Data:       dataBytes,
-			Counter:    &CounterConstraints{Min: math.MinInt64, Max: math.MaxInt64},
-			Ts:         ts,
-			TTL:        TTLNoExpirySet,
-			dataLoaded: true,
-		}
-	}
-
 	return &ValueItem{
 		Data:       dataBytes,
 		Ts:         ts,
@@ -45,14 +32,9 @@ func NewValueItem(dataBytes []byte, ts time.Time) *ValueItem {
 }
 
 // SetData updates the Data field of a ValueItem.
-func (item *ValueItem) SetData(dataBytes []byte) error {
-	// If dataBytes can be parsed as an integer and Counter is nil, initialize Counter.
-	if _, err := strconv.ParseInt(string(dataBytes), 10, 64); err == nil && item.Counter == nil {
-		item.Counter = &CounterConstraints{Min: math.MinInt64, Max: math.MaxInt64}
-	}
+func (item *ValueItem) SetData(dataBytes []byte) {
 	item.Data = dataBytes
 	item.dataLoaded = true
-	return nil
 }
 
 // expired checks if a ValueItem is expired based on its TTL.
@@ -69,4 +51,10 @@ func (item *ValueItem) unload(now time.Time, unloadAfter time.Duration) bool {
 		return false
 	}
 	return now.Sub(item.Ts) > unloadAfter
+}
+
+// unloadData removes the data from memory while keeping metadata.
+func (item *ValueItem) unloadData() {
+	item.Data = nil
+	item.dataLoaded = false
 }

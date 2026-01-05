@@ -37,20 +37,34 @@ import (
 
 func main() {
 	// Initialize kvstore without persistence
-	kv, _ := kvstore.New()
+	kv, err := kvstore.New()
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer kv.Close()
 
 	// Set a value
-	kv.Set("name", []byte("John"))
+	if err := kv.Set("name", []byte("John")); err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
 	// Get the value
-	value, _ := kv.Get("name")
-	fmt.Println("Name:", value)
+	value, err := kv.Get("name")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	fmt.Println("Name:", string(value))
 
 	// Delete the value
-	kv.Delete("name")
+	if err := kv.Delete("name"); err != nil {
+		fmt.Println("Error:", err)
+	}
 
 	// List all keys (should be empty after deletion)
-	keys, _ := kv.Keys()
+	keys := kv.Keys()
 	fmt.Println("Keys:", keys)
 
     // Close the kvstore
@@ -77,26 +91,45 @@ import (
 
 func main() {
 	// Create a Filesystem DataPersister instance
-	fsPersistence := persistence.New("testFolder")
+	fsPersistence, err := persistence.New("testFolder")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer fsPersistence.Close()
 
 	// Create a buffered DataPersister
-	bufferedPersistence := persistence.NewBuffer(fsPersistence, 10)
+	bufferedPersistence, err := persistence.NewBuffer(fsPersistence, 10)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer bufferedPersistence.Close()
 
 	// Initialize kvstore with the buffered DataPersister
-	kv, _ := kvstore.New(kvstore.WithPersistenceOption(bufferedPersistence))
+	kv, err := kvstore.New(kvstore.WithPersistenceOption(bufferedPersistence))
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer kv.Close()
 
 	// Now, kv will use fsPersistence wrapped in bufferedPersistence for data persistence
 	// Any previously persisted data will be reloaded into the cache
 
 	// Set a value
-	kv.Set("name", []byte("John"))
+	if err := kv.Set("name", []byte("John")); err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
 	// Get the value
-	value, _ := kv.Get("name")
+	value, err := kv.Get("name")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 	fmt.Println("Name:", string(value))
-
-    // Close the kvstore
-	kv.Close()
 }
 ```
 
@@ -133,10 +166,7 @@ if err != nil {
 #### List All Keys
 
 ```go
-keys, err := kv.Keys()
-if err != nil {
-    // Handle error
-}
+keys := kv.Keys() // Returns []string
 ```
 
 ### Advanced Operations
@@ -173,24 +203,51 @@ if err != nil {
 }
 ```
 
-#### Set Counter Limits and Use Counter
+#### Counters
 
+Counters are atomic integer operations with optional min/max limits. There are two ways to create a counter:
+
+**Method 1: Using Counter() directly**
 ```go
-// Set the limits for the counter (Min: 0, Max: 100)
-err := kv.SetCounterLimits("counter_key", 0, 100)
+// Create a counter initialized to 5 (with default limits: math.MinInt64 to math.MaxInt64)
+count, err := kv.Counter("pageviews", 5)
 if err != nil {
     // Handle error
 }
+fmt.Println("Counter value:", count) // 5
 
-// Increment the counter by 1
-counterValue, err := kv.Counter("counter_key", 1)
-if err != nil {
-    // Handle error
-}
+// Increment by 10
+count, err = kv.Counter("pageviews", 10)
+fmt.Println("Counter value:", count) // 15
 
-// Output the current counter value
-fmt.Println("Current counter value:", counterValue)
+// Decrement by 3
+count, err = kv.Counter("pageviews", -3)
+fmt.Println("Counter value:", count) // 12
 ```
+
+**Method 2: Using SetCounterLimits() with bounded values**
+```go
+// Create a counter with custom limits (Min: 0, Max: 100), initialized to 0
+err := kv.SetCounterLimits("score", 0, 100)
+if err != nil {
+    // Handle error
+}
+
+// Increment the counter
+score, err := kv.Counter("score", 15)
+if err != nil {
+    // Handle error
+}
+fmt.Println("Current score:", score) // 15
+
+// Trying to exceed max returns an error
+score, err = kv.Counter("score", 90) // Would result in 105
+if err != nil {
+    fmt.Println("Error:", err) // "Store.Counter maximum value reached"
+}
+```
+
+**Important:** Once a key is used as a counter, it can only be used for counter operations. Calling `Set()` on a counter key will overwrite it as regular data.
 
 ## Documentation
 

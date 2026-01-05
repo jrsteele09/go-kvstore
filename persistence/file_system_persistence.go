@@ -22,23 +22,23 @@ type Persistor struct {
 }
 
 // New initializes a new Filesystem persistence object.
-func New(folder string) *Persistor {
+func New(folder string) (*Persistor, error) {
 	rootFS, err := os.OpenRoot(folder)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to open root: %v", err))
+		return nil, fmt.Errorf("failed to open root: %w", err)
 	}
 	return &Persistor{
 		rootFS: rootFS,
-	}
+	}, nil
 }
 
 // Close cleans up resources. Currently, it does nothing.
-func (p Persistor) Close() {
+func (p *Persistor) Close() {
 	p.rootFS.Close()
 }
 
 // Keys returns a list of keys available in the folder.
-func (p Persistor) Keys() ([]string, error) {
+func (p *Persistor) Keys() ([]string, error) {
 	f, err := p.rootFS.Open(".")
 	if err != nil {
 		return nil, fmt.Errorf("Keys: Open: %w", err)
@@ -61,7 +61,7 @@ func (p Persistor) Keys() ([]string, error) {
 }
 
 // Write writes the ValueItem to the folder specified by the key.
-func (p Persistor) Write(key string, data *kvstore.ValueItem) error {
+func (p *Persistor) Write(key string, data *kvstore.ValueItem) error {
 	if err := p.rootFS.MkdirAll(key, fileMode); err != nil {
 		return fmt.Errorf("Write: MkdirAll: %w", err)
 	}
@@ -87,7 +87,7 @@ func (p Persistor) Write(key string, data *kvstore.ValueItem) error {
 }
 
 // Delete removes the folder specified by the key.
-func (p Persistor) Delete(key string) error {
+func (p *Persistor) Delete(key string) error {
 	if err := p.rootFS.RemoveAll(key); err != nil {
 		return fmt.Errorf("Delete: RemoveAll: %w", err)
 	}
@@ -95,7 +95,7 @@ func (p Persistor) Delete(key string) error {
 }
 
 // Read retrieves the ValueItem identified by the key.
-func (p Persistor) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
+func (p *Persistor) Read(key string, readValue bool) (*kvstore.ValueItem, error) {
 	metadataPath := path.Join(key, metaDataFilename)
 
 	metaData, err := p.rootFS.ReadFile(metadataPath)
@@ -115,9 +115,7 @@ func (p Persistor) Read(key string, readValue bool) (*kvstore.ValueItem, error) 
 			return nil, fmt.Errorf("Read: ReadFile data: %w", err)
 		}
 
-		if err := valueItem.SetData(data); err != nil {
-			return nil, fmt.Errorf("Read: SetData: %w", err)
-		}
+		valueItem.SetData(data)
 	}
 
 	return &valueItem, nil
