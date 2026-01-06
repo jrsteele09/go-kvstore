@@ -311,7 +311,10 @@ func TestLoadFailure(t *testing.T) {
 	const testFolder = "TestLoadFailure"
 	const failKey = "key1"
 	defer os.RemoveAll(testFolder)
-	os.MkdirAll(path.Join(testFolder, failKey), 0700)
+	os.MkdirAll(testFolder, 0700)
+
+	// Create a corrupted .meta file to simulate a load failure
+	os.WriteFile(path.Join(testFolder, failKey+".meta"), []byte("corrupted json"), 0700)
 
 	p, err := persistence.New(testFolder)
 	require.NoError(t, err)

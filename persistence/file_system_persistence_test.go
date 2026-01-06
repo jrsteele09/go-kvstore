@@ -70,13 +70,9 @@ func TestPersistor_Write(t *testing.T) {
 	err = p.Write(key, value)
 	assert.NoError(t, err)
 
-	// Verify the directory and files were created
-	keyDir := filepath.Join(testDir, key)
-	metadataFile := filepath.Join(keyDir, "metadata.json")
-	dataFile := filepath.Join(keyDir, "data.bin")
-
-	_, err = os.Stat(keyDir)
-	assert.NoError(t, err, "key directory should exist")
+	// Verify the files were created
+	metadataFile := filepath.Join(testDir, key+".meta")
+	dataFile := filepath.Join(testDir, key+".data")
 
 	_, err = os.Stat(metadataFile)
 	assert.NoError(t, err, "metadata file should exist")
@@ -106,7 +102,7 @@ func TestPersistor_WriteWithNilData(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Data file should not exist when Data is nil
-	dataFile := filepath.Join(testDir, key, "data.bin")
+	dataFile := filepath.Join(testDir, key+".data")
 	_, err = os.Stat(dataFile)
 	assert.True(t, os.IsNotExist(err), "data file should not exist when Data is nil")
 }
@@ -182,18 +178,18 @@ func TestPersistor_Delete(t *testing.T) {
 	err = p.Write(key, value)
 	require.NoError(t, err)
 
-	// Verify it exists
-	keyDir := filepath.Join(testDir, key)
-	_, err = os.Stat(keyDir)
+	// Verify files exist
+	metadataFile := filepath.Join(testDir, key+".meta")
+	_, err = os.Stat(metadataFile)
 	require.NoError(t, err)
 
 	// Delete
 	err = p.Delete(key)
 	assert.NoError(t, err)
 
-	// Verify it's gone
-	_, err = os.Stat(keyDir)
-	assert.True(t, os.IsNotExist(err), "key directory should be removed after delete")
+	// Verify files are gone
+	_, err = os.Stat(metadataFile)
+	assert.True(t, os.IsNotExist(err), "metadata file should be removed after delete")
 }
 
 func TestPersistor_Keys(t *testing.T) {
@@ -343,4 +339,146 @@ func TestPersistor_WithCounter(t *testing.T) {
 	assert.NotNil(t, readValue.Counter)
 	assert.Equal(t, int64(0), readValue.Counter.Min)
 	assert.Equal(t, int64(1000), readValue.Counter.Max)
+}
+
+func TestPersistor_KeysWithSlash(t *testing.T) {
+	testDir := filepath.Join(testDataDir, "test_keys_slash")
+	require.NoError(t, os.MkdirAll(testDir, 0755))
+	defer os.RemoveAll(testDir)
+
+	p, err := New(testDir)
+	require.NoError(t, err)
+	defer p.Close()
+
+	// Write keys with folder structure
+	keysToWrite := []string{
+		"user",
+		"tenant/user1",
+		"tenant/user2",
+		"tenant/clients/1",
+		"tenant/clients/2",
+	}
+
+	for _, key := range keysToWrite {
+		value := &kvstore.ValueItem{
+			Data:    []byte("value_" + key),
+			Ts:      time.Now(),
+			TTL:     kvstore.TTLNoExpirySet,
+			Counter: nil,
+		}
+		err := p.Write(key, value)
+		require.NoError(t, err)
+	}
+
+	// Verify files and folders were created correctly
+	userFile := filepath.Join(testDir, "user.meta")
+	_, err = os.Stat(userFile)
+	assert.NoError(t, err, "user.meta should exist at root")
+
+	tenantDir := filepath.Join(testDir, "tenant")
+	_, err = os.Stat(tenantDir)
+	assert.NoError(t, err, "tenant folder should exist")
+
+	clientsDir := filepath.Join(testDir, "tenant", "clients")
+	_, err = os.Stat(clientsDir)
+	assert.NoError(t, err, "tenant/clients folder should exist")
+
+	client1File := filepath.Join(testDir, "tenant", "clients", "1.meta")
+	_, err = os.Stat(client1File)
+	assert.NoError(t, err, "tenant/clients/1.meta should exist")
+
+	// Get all keys and verify
+	keys, err := p.Keys()
+	assert.NoError(t, err)
+	assert.Len(t, keys, len(keysToWrite))
+	assert.ElementsMatch(t, keysToWrite, keys)
+
+	// Read a nested key
+	readValue, err := p.Read("tenant/clients/1", true)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("value_tenant/clients/1"), readValue.Data)
+
+	// Delete a nested key
+	err = p.Delete("tenant/clients/1")
+	assert.NoError(t, err)
+
+	// Verify it's gone
+	_, err = p.Read("tenant/clients/1", true)
+	assert.Error(t, err)
+
+	// Other keys should still exist
+	keys, err = p.Keys()
+	assert.NoError(t, err)
+	assert.Len(t, keys, len(keysToWrite)-1)
+}
+
+func TestPersistor_KeyRestore(t *testing.T) {
+	testDir := filepath.Join(testDataDir, "test_keys_slash")
+	require.NoError(t, os.MkdirAll(testDir, 0755))
+	defer os.RemoveAll(testDir)
+
+	p, err := New(testDir)
+	require.NoError(t, err)
+	defer p.Close()
+
+	// Write keys with folder structure
+	keysToWrite := []string{
+		"user",
+		"tenant/user1",
+		"tenant/user2",
+		"tenant/clients/1",
+		"tenant/clients/2",
+	}
+
+	for _, key := range keysToWrite {
+		value := &kvstore.ValueItem{
+			Data:    []byte("value_" + key),
+			Ts:      time.Now(),
+			TTL:     kvstore.TTLNoExpirySet,
+			Counter: nil,
+		}
+		err := p.Write(key, value)
+		require.NoError(t, err)
+	}
+
+	// Verify files and folders were created correctly
+	userFile := filepath.Join(testDir, "user.meta")
+	_, err = os.Stat(userFile)
+	assert.NoError(t, err, "user.meta should exist at root")
+
+	tenantDir := filepath.Join(testDir, "tenant")
+	_, err = os.Stat(tenantDir)
+	assert.NoError(t, err, "tenant folder should exist")
+
+	clientsDir := filepath.Join(testDir, "tenant", "clients")
+	_, err = os.Stat(clientsDir)
+	assert.NoError(t, err, "tenant/clients folder should exist")
+
+	client1File := filepath.Join(testDir, "tenant", "clients", "1.meta")
+	_, err = os.Stat(client1File)
+	assert.NoError(t, err, "tenant/clients/1.meta should exist")
+
+	// Get all keys and verify
+	keys, err := p.Keys()
+	assert.NoError(t, err)
+	assert.Len(t, keys, len(keysToWrite))
+	assert.ElementsMatch(t, keysToWrite, keys)
+
+	// Read a nested key
+	readValue, err := p.Read("tenant/clients/1", true)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("value_tenant/clients/1"), readValue.Data)
+
+	// Delete a nested key
+	err = p.Delete("tenant/clients/1")
+	assert.NoError(t, err)
+
+	// Verify it's gone
+	_, err = p.Read("tenant/clients/1", true)
+	assert.Error(t, err)
+
+	// Other keys should still exist
+	keys, err = p.Keys()
+	assert.NoError(t, err)
+	assert.Len(t, keys, len(keysToWrite)-1)
 }

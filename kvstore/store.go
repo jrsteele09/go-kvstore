@@ -36,13 +36,14 @@ var (
 // Store represents the key-value storage system.
 // It is thread-safe and allows for optional data persistence.
 type Store struct {
-	lock            sync.RWMutex
 	data            map[string]*ValueItem
 	persistence     []DataPersister
 	evictionFreq    time.Duration
 	unloadAfterTime time.Duration
+	lock            sync.RWMutex
 	ctx             context.Context
 	cancelFunc      context.CancelFunc
+	wg              sync.WaitGroup
 }
 
 // New initializes a new Store with optional configurations.
@@ -63,6 +64,7 @@ func New(options ...StoreOption) (*Store, error) {
 		return nil, err
 	}
 	store.ctx, store.cancelFunc = context.WithCancel(context.Background())
+	store.wg.Add(1)
 	go store.evictionController()
 	return store, nil
 }
@@ -70,6 +72,7 @@ func New(options ...StoreOption) (*Store, error) {
 // Close stops the internal cache management routines.
 func (s *Store) Close() {
 	s.cancelFunc()
+	s.wg.Wait()
 }
 
 // Set stores a key-value pair into the Store.
@@ -183,18 +186,23 @@ func (s *Store) TTL(key string) TTLType {
 	}
 
 	s.lock.RLock()
-	defer s.lock.RUnlock()
 	if _, ok := s.data[key]; !ok {
+		s.lock.RUnlock()
 		return TTLKeyNotExist
 	}
 	mv := s.data[key]
-	expireTime := mv.Ts.Add(time.Duration(mv.TTL) * time.Second)
-	ttl := expireTime.Sub(nowFunc()).Seconds()
-	ttl = math.Ceil(ttl)
-	if ttl < 0 {
-		ttl = 0
+
+	ts := mv.Ts
+	ttl := mv.TTL
+	s.lock.RUnlock()
+
+	expireTime := ts.Add(time.Duration(ttl) * time.Second)
+	remaining := expireTime.Sub(nowFunc()).Seconds()
+	remaining = math.Ceil(remaining)
+	if remaining < 0 {
+		remaining = 0
 	}
-	return TTLType(ttl)
+	return TTLType(remaining)
 }
 
 // Touch updates the last-accessed time for a given key.
@@ -386,6 +394,7 @@ func (s *Store) persistData(key string) error {
 }
 
 func (s *Store) evictionController() {
+	defer s.wg.Done()
 	if s.evictionFreq <= 0 {
 		return
 	}
