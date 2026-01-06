@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/jrsteele09/go-kvstore/kvstore"
 	"github.com/rs/zerolog/log"
@@ -31,9 +32,10 @@ type commandBuffer struct {
 
 // Buffer provides a thread-safe way to interact with a DataPersister.
 type Buffer struct {
+	persistence kvstore.DataPersister
 	cb          chan commandBuffer
 	cancel      context.CancelFunc
-	persistence kvstore.DataPersister
+	wg          sync.WaitGroup
 }
 
 // NewBuffer creates a new Buffer.
@@ -47,6 +49,7 @@ func NewBuffer(persistence kvstore.DataPersister, bufferSize uint) (*Buffer, err
 		cancel:      cancelFunc,
 		persistence: persistence,
 	}
+	buffer.wg.Add(1)
 	go buffer.commandBuffer(ctx)
 	return &buffer, nil
 }
@@ -54,6 +57,8 @@ func NewBuffer(persistence kvstore.DataPersister, bufferSize uint) (*Buffer, err
 // Close cancels the background command processing.
 func (b *Buffer) Close() {
 	b.cancel()
+	b.wg.Wait()
+	close(b.cb)
 }
 
 // Write queues a write command.
@@ -91,6 +96,7 @@ func (b *Buffer) Keys() ([]string, error) {
 
 // commandBuffer processes commands.
 func (b *Buffer) commandBuffer(ctx context.Context) {
+	defer b.wg.Done()
 	for {
 		select {
 		case command := <-b.cb:

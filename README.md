@@ -66,9 +66,6 @@ func main() {
 	// List all keys (should be empty after deletion)
 	keys := kv.Keys()
 	fmt.Println("Keys:", keys)
-
-    // Close the kvstore
-	kv.Close()
 }
 ```
 
@@ -167,6 +164,25 @@ if err != nil {
 
 ```go
 keys := kv.Keys() // Returns []string
+```
+
+#### Hierarchical Keys
+
+Keys can contain `/` to represent hierarchical folder structures in persistence:
+
+```go
+// Store with hierarchical keys
+err := kv.Set("tenant/user1", []byte("user data"))
+err = kv.Set("tenant/clients/1", []byte("client data"))
+err = kv.Set("tenant/clients/2", []byte("client data"))
+
+// These will be persisted as:
+// tenant/user1.meta and tenant/user1.data
+// tenant/clients/1.meta and tenant/clients/1.data
+// tenant/clients/2.meta and tenant/clients/2.data
+
+// Keys with special characters like ':' are automatically sanitized for filesystem compatibility
+err := kv.Set("user:123", []byte("data"))
 ```
 
 ### Advanced Operations

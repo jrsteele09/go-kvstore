@@ -52,7 +52,7 @@ func New(options ...StoreOption) (*Store, error) {
 	store := &Store{
 		data:            make(map[string]*ValueItem),
 		persistence:     make([]DataPersister, 0),
-		evictionFreq:    0,
+		evictionFreq:    time.Minute,
 		unloadAfterTime: 0,
 	}
 
