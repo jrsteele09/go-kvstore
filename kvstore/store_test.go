@@ -26,6 +26,7 @@ func TestStoreCrud(t *testing.T) {
 	require.NoError(t, err)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
+	defer s.Close() // Closes store and all persistence layers
 	require.NoError(t, s.Set(key, []byte(data)))
 	b, err := s.Get(key)
 	require.NoError(t, err)
@@ -43,6 +44,7 @@ func BenchmarkMemcacheDSetGetDelete(b *testing.B) {
 	p, _ := persistence.New(folder)
 	buf, _ := persistence.NewBuffer(p, 10)
 	s, _ := kvstore.New(kvstore.WithPersistenceOption(buf))
+	defer s.Close()
 
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("Key-%d", i)
@@ -65,6 +67,7 @@ func TestStoreCrudInteger(t *testing.T) {
 	require.NoError(t, err)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
+	defer s.Close() // Closes store and all persistence layers
 	require.NoError(t, s.Set(key, []byte(data)))
 	b, err := s.Get(key)
 	require.NoError(t, err)
@@ -86,6 +89,7 @@ func TestStoreIntegerCounter(t *testing.T) {
 	require.NoError(t, err)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
+	defer s.Close() // Closes store and all persistence layers
 	require.NoError(t, s.SetCounterLimits(key, -1, 1))
 
 	i, err := s.Counter(key, 1)
@@ -130,6 +134,7 @@ func TestEvictionCrud(t *testing.T) {
 	require.NoError(t, err)
 	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
+	defer s.Close() // Closes store and all persistence layers
 	require.NoError(t, s.Set(key, []byte(data)))
 	s.SetTTL(key, 1)
 	time.Sleep(1 * time.Second)
@@ -152,8 +157,8 @@ func TestMemoryUnload(t *testing.T) {
 		kvstore.WithUnloadFrequencyOption(10*time.Millisecond, 100*time.Millisecond),
 		kvstore.WithPersistenceOption(buf),
 	)
-
 	require.NoError(t, err)
+	defer s.Close() // Closes store and all persistence layers
 	require.NoError(t, s.Set(key, []byte(data)))
 	require.True(t, s.InMemory(key))
 	time.Sleep(500 * time.Millisecond)
@@ -167,6 +172,7 @@ func TestGettingKeys(t *testing.T) {
 	const data = "TestStoreCrud"
 	s, err := kvstore.New()
 	require.NoError(t, err)
+	defer s.Close()
 
 	keys := []string{"a", "b", "c", "d", "e"}
 
@@ -198,12 +204,15 @@ func TestPersistenceStartup(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))
 	time.Sleep(100 * time.Millisecond) // Wait for the write to happen
+	s.Close()
+
 	p2, err := persistence.New(folder)
 	require.NoError(t, err)
 	buf2, err := persistence.NewBuffer(p2, 10)
 	require.NoError(t, err)
 	s2, err := kvstore.New(kvstore.WithPersistenceOption(buf2))
 	require.NoError(t, err)
+	defer s2.Close()
 	bytes, err := s2.Get(key)
 	require.NoError(t, err)
 	require.Equal(t, data, string(bytes))
@@ -238,6 +247,7 @@ func TestStoreCrudThreaded(t *testing.T) {
 
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond) // Wait for the write to happen
+	s.Close()
 
 	p2, err := persistence.New(testFolder)
 	require.NoError(t, err)
@@ -245,6 +255,7 @@ func TestStoreCrudThreaded(t *testing.T) {
 	require.NoError(t, err)
 	s2, err := kvstore.New(kvstore.WithPersistenceOption(buf2))
 	require.NoError(t, err)
+	defer s2.Close()
 
 	// Read
 	wg.Add(nRoutines)
@@ -284,6 +295,7 @@ func TestThreadedEviction(t *testing.T) {
 	require.NoError(t, err)
 	s, err := kvstore.New(kvstore.WithUnloadFrequencyOption(100*time.Millisecond, 0), kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
+	defer s.Close() // Closes store and all persistence layers
 
 	var wg sync.WaitGroup
 
@@ -322,6 +334,7 @@ func TestLoadFailure(t *testing.T) {
 	require.NoError(t, err)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(buf))
 	require.NoError(t, err)
+	defer s.Close() // Closes store and all persistence layers
 
 	rd, err := s.Get(failKey)
 	require.Nil(t, rd)
@@ -355,10 +368,12 @@ func TestMultiPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, s.Set(key, []byte(data)))
 	time.Sleep(100 * time.Millisecond)
+	s.Close()
 	p3, err := persistence.New(backupFolder)
 	require.NoError(t, err)
 	s2, err := kvstore.New(kvstore.WithPersistenceOption(p3))
 	require.NoError(t, err)
+	defer s2.Close()
 	readData, err := s2.Get(key)
 	require.NoError(t, err)
 	require.Equal(t, data, string(readData))
@@ -373,8 +388,8 @@ func TestTTL(t *testing.T) {
 	p, err := persistence.New(folder)
 	require.NoError(t, err)
 	s, err := kvstore.New(kvstore.WithPersistenceOption(p))
-
 	require.NoError(t, err)
+	defer s.Close()
 	require.NoError(t, s.Set(key, []byte(data)))
 	s.SetTTL(key, 4)
 	time.Sleep(1 * time.Second)

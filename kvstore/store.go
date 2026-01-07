@@ -69,10 +69,15 @@ func New(options ...StoreOption) (*Store, error) {
 	return store, nil
 }
 
-// Close stops the internal cache management routines.
+// Close stops the internal cache management routines and closes all persistence layers.
 func (s *Store) Close() {
 	s.cancelFunc()
 	s.wg.Wait()
+
+	// Close all persistence layers
+	for _, p := range s.persistence {
+		p.Close()
+	}
 }
 
 // Set stores a key-value pair into the Store.

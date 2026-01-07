@@ -25,4 +25,7 @@ type DataPersister interface {
 
 	// Keys returns a slice containing all keys stored in the persistence layer.
 	Keys() ([]string, error)
+
+	// Close performs any necessary cleanup for the persister.
+	Close()
 }

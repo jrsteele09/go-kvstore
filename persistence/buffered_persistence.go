@@ -56,6 +56,7 @@ func NewBuffer(persistence kvstore.DataPersister, bufferSize uint) (*Buffer, err
 
 // Close cancels the background command processing.
 func (b *Buffer) Close() {
+	b.persistence.Close()
 	b.cancel()
 	b.wg.Wait()
 	close(b.cb)

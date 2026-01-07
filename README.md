@@ -25,7 +25,7 @@ go get -u github.com/jrsteele09/go-kvstore
 
 ## Basic Quick Start (Without Data Persistence)
 
-To use `go-kvstore` without persistence, simply initialize a new store and begin using its methods.
+To use `go-kvstore` without persistence, simply initialize a new store and begin using its methods. Always remember to call `Close()` when you're done to clean up resources.
 
 ```go
 package main
@@ -42,7 +42,7 @@ func main() {
 		fmt.Println("Error:", err)
 		return
 	}
-	defer kv.Close()
+	defer kv.Close() // Always close to clean up resources
 
 	// Set a value
 	if err := kv.Set("name", []byte("John")); err != nil {
@@ -73,6 +73,8 @@ func main() {
 
 For applications requiring data persistence, `go-kvstore` can be configured with one or multiple `DataPersister` instances. Importantly, the store will use only the first `DataPersister` instance to reload any previously persisted data back into the cache upon initialization. This feature ensures that the application's state remains consistent even after restarts or shutdowns.
 
+**Important:** Always call `kv.Close()` when you're done - it automatically closes all persistence layers (buffers and underlying persisters) and stops background goroutines. You don't need to manually close the persistence layers.
+
 ### Example: Initializing with Filesystem-Based Data Persister
 
 Here, the `go-kvstore` is initialized using a buffered, filesystem-based `DataPersister`.
@@ -93,7 +95,6 @@ func main() {
 		fmt.Println("Error:", err)
 		return
 	}
-	defer fsPersistence.Close()
 
 	// Create a buffered DataPersister
 	bufferedPersistence, err := persistence.NewBuffer(fsPersistence, 10)
@@ -101,7 +102,6 @@ func main() {
 		fmt.Println("Error:", err)
 		return
 	}
-	defer bufferedPersistence.Close()
 
 	// Initialize kvstore with the buffered DataPersister
 	kv, err := kvstore.New(kvstore.WithPersistenceOption(bufferedPersistence))
@@ -109,7 +109,7 @@ func main() {
 		fmt.Println("Error:", err)
 		return
 	}
-	defer kv.Close()
+	defer kv.Close() // Automatically closes the store, buffer, and fsPersistence
 
 	// Now, kv will use fsPersistence wrapped in bufferedPersistence for data persistence
 	// Any previously persisted data will be reloaded into the cache
